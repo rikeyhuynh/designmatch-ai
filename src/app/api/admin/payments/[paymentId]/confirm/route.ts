@@ -10,11 +10,17 @@ type RouteContext = {
 type PaymentRow = {
   id: string;
   job_id: string;
+  amount_vnd: number;
   status: string;
+  transfer_note: string | null;
+  platform_fee_percent: number | null;
+  platform_fee_vnd: number | null;
+  designer_revenue_vnd: number | null;
 };
 
 type JobRow = {
   id: string;
+  request_id: string;
   status: string;
   started_at: string | null;
 };
@@ -37,7 +43,7 @@ export async function POST(_request: Request, context: RouteContext) {
   if (!authState.isAuthenticated || !authState.profile) {
     return NextResponse.json(
       {
-        message: "Bạn cần đăng nhập bằng tài khoản admin.",
+        message: "Bạn cần đăng nhập để xác nhận payment.",
       },
       { status: 401 },
     );
@@ -46,7 +52,7 @@ export async function POST(_request: Request, context: RouteContext) {
   if (authState.profile.role !== "admin") {
     return NextResponse.json(
       {
-        message: "Bạn không có quyền xác nhận thanh toán.",
+        message: "Chỉ admin mới có thể xác nhận payment.",
       },
       { status: 403 },
     );
@@ -56,7 +62,18 @@ export async function POST(_request: Request, context: RouteContext) {
 
   const { data: paymentData, error: paymentError } = await adminSupabase
     .from("payments")
-    .select("id, job_id, status")
+    .select(
+      `
+      id,
+      job_id,
+      amount_vnd,
+      status,
+      transfer_note,
+      platform_fee_percent,
+      platform_fee_vnd,
+      designer_revenue_vnd
+    `,
+    )
     .eq("id", paymentId)
     .maybeSingle();
 
@@ -69,7 +86,9 @@ export async function POST(_request: Request, context: RouteContext) {
     );
   }
 
-  if (!paymentData) {
+  const payment = paymentData as PaymentRow | null;
+
+  if (!payment) {
     return NextResponse.json(
       {
         message: "Không tìm thấy payment.",
@@ -78,11 +97,9 @@ export async function POST(_request: Request, context: RouteContext) {
     );
   }
 
-  const payment = paymentData as PaymentRow;
-
   const { data: jobData, error: jobError } = await adminSupabase
     .from("jobs")
-    .select("id, status, started_at")
+    .select("id, request_id, status, started_at")
     .eq("id", payment.job_id)
     .maybeSingle();
 
@@ -95,77 +112,72 @@ export async function POST(_request: Request, context: RouteContext) {
     );
   }
 
-  if (!jobData) {
+  const job = jobData as JobRow | null;
+
+  if (!job) {
     return NextResponse.json(
       {
-        message: "Không tìm thấy job liên kết với payment này.",
+        message: "Không tìm thấy job của payment này.",
       },
       { status: 404 },
     );
   }
 
-  const job = jobData as JobRow;
-
-  if (["confirmed", "paid", "completed"].includes(payment.status)) {
-    if (job.status !== "active" && job.status !== "completed") {
-      const now = new Date().toISOString();
-
-      const { error: jobRepairError } = await adminSupabase
-        .from("jobs")
-        .update({
-          status: "active",
-          started_at: job.started_at ?? now,
-        })
-        .eq("id", job.id);
-
-      if (jobRepairError) {
-        return NextResponse.json(
-          {
-            message: jobRepairError.message,
-          },
-          { status: 500 },
-        );
-      }
-    }
-
+  if (payment.status === "confirmed") {
     return NextResponse.json({
       message: "Payment này đã được xác nhận trước đó.",
-      paymentId: payment.id,
-      jobId: job.id,
+      payment,
+      job,
     });
   }
 
-  if (payment.status === "rejected") {
+  if (payment.status !== "waiting_admin_confirm") {
     return NextResponse.json(
       {
-        message:
-          "Payment này đã bị từ chối trước đó. Hãy tạo payment mới nếu customer cần thanh toán lại.",
+        message: `Payment đang ở trạng thái ${payment.status}, chưa thể xác nhận.`,
       },
-      { status: 400 },
+      { status: 409 },
     );
   }
 
-  if (job.status === "cancelled") {
+  if (!["payment_pending", "active"].includes(job.status)) {
     return NextResponse.json(
       {
-        message: "Job đã bị hủy nên không thể xác nhận payment.",
+        message: `Job đang ở trạng thái ${job.status}, không thể kích hoạt từ payment này.`,
       },
-      { status: 400 },
+      { status: 409 },
     );
   }
 
   const now = new Date().toISOString();
 
-  const { error: updatePaymentError } = await adminSupabase
-    .from("payments")
-    .update({
-      status: "confirmed",
-      confirmed_at: now,
-      reviewed_at: now,
-      reviewed_by: authState.profile.id,
-      admin_note: "Admin confirmed manual bank transfer.",
-    })
-    .eq("id", payment.id);
+  const { data: updatedPayment, error: updatePaymentError } =
+    await adminSupabase
+      .from("payments")
+      .update({
+        status: "confirmed",
+        confirmed_at: now,
+        reviewed_at: now,
+        reviewed_by: authState.profile.id,
+        updated_at: now,
+      })
+      .eq("id", payment.id)
+      .select(
+        `
+        id,
+        job_id,
+        amount_vnd,
+        status,
+        transfer_note,
+        confirmed_at,
+        reviewed_at,
+        reviewed_by,
+        platform_fee_percent,
+        platform_fee_vnd,
+        designer_revenue_vnd
+      `,
+      )
+      .single();
 
   if (updatePaymentError) {
     return NextResponse.json(
@@ -176,15 +188,29 @@ export async function POST(_request: Request, context: RouteContext) {
     );
   }
 
-  const { error: updateJobError } = await adminSupabase
+  const { data: updatedJob, error: updateJobError } = await adminSupabase
     .from("jobs")
     .update({
       status: "active",
       started_at: job.started_at ?? now,
+      updated_at: now,
     })
-    .eq("id", payment.job_id);
+    .eq("id", job.id)
+    .select("id, request_id, status, started_at")
+    .single();
 
   if (updateJobError) {
+    await adminSupabase
+      .from("payments")
+      .update({
+        status: "waiting_admin_confirm",
+        confirmed_at: null,
+        reviewed_at: null,
+        reviewed_by: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", payment.id);
+
     return NextResponse.json(
       {
         message: updateJobError.message,
@@ -193,9 +219,27 @@ export async function POST(_request: Request, context: RouteContext) {
     );
   }
 
+  const { error: requestUpdateError } = await adminSupabase
+    .from("design_requests")
+    .update({
+      status: "in_progress",
+      updated_at: now,
+    })
+    .eq("id", job.request_id);
+
+  if (requestUpdateError) {
+    return NextResponse.json({
+      message:
+        "Đã xác nhận payment và kích hoạt job, nhưng chưa cập nhật được trạng thái request.",
+      warning: requestUpdateError.message,
+      payment: updatedPayment,
+      job: updatedJob,
+    });
+  }
+
   return NextResponse.json({
-    message: "Đã xác nhận thanh toán và kích hoạt job.",
-    paymentId: payment.id,
-    jobId: payment.job_id,
+    message: "Đã xác nhận payment và kích hoạt job.",
+    payment: updatedPayment,
+    job: updatedJob,
   });
 }

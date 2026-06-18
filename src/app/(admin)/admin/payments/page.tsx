@@ -6,11 +6,13 @@ import {
   BriefcaseBusiness,
   CalendarDays,
   CheckCircle2,
+  CircleDollarSign,
   Clock3,
   CreditCard,
   FileText,
   ShieldCheck,
   Store,
+  TriangleAlert,
   UserRound,
   WalletCards,
 } from "lucide-react";
@@ -28,12 +30,17 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type PaymentRow = {
   id: string;
-  job_id: string;
+  job_id: string | null;
   amount_vnd: number;
   status: string;
+  transfer_note: string | null;
   admin_note: string | null;
+  platform_fee_percent: number | null;
+  platform_fee_vnd: number | null;
+  designer_revenue_vnd: number | null;
   reviewed_at: string | null;
   reviewed_by: string | null;
+  confirmed_at: string | null;
   created_at: string;
 };
 
@@ -44,6 +51,13 @@ type JobRow = {
   title: string;
   status: string;
   agreed_price_vnd: number;
+  pricing_tier: string | null;
+  package_code: string | null;
+  package_name: string | null;
+  selected_price_vnd: number | null;
+  platform_fee_percent: number | null;
+  platform_fee_vnd: number | null;
+  designer_revenue_vnd: number | null;
   created_at: string;
 };
 
@@ -63,6 +77,7 @@ type DesignerRow = {
   headline: string | null;
   rating: number;
   completed_jobs: number;
+  verification_status: string | null;
 };
 
 export default async function AdminPaymentsPage() {
@@ -83,16 +98,23 @@ export default async function AdminPaymentsPage() {
       job_id,
       amount_vnd,
       status,
+      transfer_note,
       admin_note,
+      platform_fee_percent,
+      platform_fee_vnd,
+      designer_revenue_vnd,
       reviewed_at,
       reviewed_by,
+      confirmed_at,
       created_at
     `,
     )
     .order("created_at", { ascending: false });
 
   const payments = (paymentsResult.data ?? []) as unknown as PaymentRow[];
-  const jobIds = Array.from(new Set(payments.map((payment) => payment.job_id)));
+  const jobIds = Array.from(
+    new Set(payments.map((payment) => payment.job_id).filter(Boolean)),
+  ) as string[];
 
   const jobsResult =
     jobIds.length > 0
@@ -106,6 +128,13 @@ export default async function AdminPaymentsPage() {
             title,
             status,
             agreed_price_vnd,
+            pricing_tier,
+            package_code,
+            package_name,
+            selected_price_vnd,
+            platform_fee_percent,
+            platform_fee_vnd,
+            designer_revenue_vnd,
             created_at
           `,
           )
@@ -139,7 +168,16 @@ export default async function AdminPaymentsPage() {
     designerIds.length > 0
       ? await adminSupabase
           .from("designer_profiles")
-          .select("id, display_name, headline, rating, completed_jobs")
+          .select(
+            `
+            id,
+            display_name,
+            headline,
+            rating,
+            completed_jobs,
+            verification_status
+          `,
+          )
           .in("id", designerIds)
       : { data: [], error: null };
 
@@ -147,11 +185,13 @@ export default async function AdminPaymentsPage() {
   const designers = (designersResult.data ?? []) as unknown as DesignerRow[];
 
   const confirmedPayments = payments.filter((payment) =>
-    ["paid", "confirmed", "completed"].includes(payment.status),
+    ["paid", "confirmed", "completed", "succeeded"].includes(payment.status),
   );
 
   const pendingPayments = payments.filter((payment) =>
-    ["pending", "waiting", "submitted"].includes(payment.status),
+    ["pending", "waiting", "submitted", "waiting_transfer"].includes(
+      payment.status,
+    ),
   );
 
   const rejectedPayments = payments.filter(
@@ -170,6 +210,16 @@ export default async function AdminPaymentsPage() {
 
   const pendingPaymentValue = pendingPayments.reduce(
     (total, payment) => total + Number(payment.amount_vnd ?? 0),
+    0,
+  );
+
+  const platformFeeValue = confirmedPayments.reduce(
+    (total, payment) => total + Number(payment.platform_fee_vnd ?? 0),
+    0,
+  );
+
+  const designerRevenueValue = confirmedPayments.reduce(
+    (total, payment) => total + Number(payment.designer_revenue_vnd ?? 0),
     0,
   );
 
@@ -200,14 +250,6 @@ export default async function AdminPaymentsPage() {
         />
 
         <MetricCard
-          label="Confirmed value"
-          value={formatCurrencyVnd(confirmedPaymentValue)}
-          description="Tổng tiền đã xác nhận"
-          icon={<WalletCards className="size-5" />}
-          tone="success"
-        />
-
-        <MetricCard
           label="Pending"
           value={`${pendingPayments.length}`}
           description="Payment đang chờ kiểm tra"
@@ -216,74 +258,116 @@ export default async function AdminPaymentsPage() {
         />
 
         <MetricCard
-          label="Rejected"
-          value={`${rejectedPayments.length}`}
-          description="Payment bị từ chối"
-          icon={<ShieldCheck className="size-5" />}
+          label="Platform fee"
+          value={formatCurrencyVnd(platformFeeValue)}
+          description="Doanh thu nền tảng đã xác nhận"
+          icon={<CircleDollarSign className="size-5" />}
+          tone="success"
+        />
+
+        <MetricCard
+          label="Designer revenue"
+          value={formatCurrencyVnd(designerRevenueValue)}
+          description="Tổng tiền designer nhận"
+          icon={<WalletCards className="size-5" />}
         />
       </section>
 
       <section className="mt-5">
-        <SurfaceCard className="p-6">
-          <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr] xl:items-center">
-            <div>
-              <p className="text-sm font-black uppercase tracking-[0.22em] text-blue-600">
-                Payment control center
-              </p>
+        <SurfaceCard className="overflow-hidden p-0">
+          <div className="bg-gradient-to-br from-[#061a3a] via-[#0b2a61] to-blue-700 p-6 text-white">
+            <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr] xl:items-center">
+              <div>
+                <p className="text-sm font-black uppercase tracking-[0.22em] text-sky-200/75">
+                  Payment operations center
+                </p>
 
-              <h2 className="mt-3 text-3xl font-extrabold tracking-[-0.055em] text-[#061a3a]">
-                Quản trị thanh toán toàn hệ thống
-              </h2>
+                <h2 className="mt-3 text-3xl font-extrabold tracking-[-0.055em] text-white">
+                  Trung tâm kiểm soát thanh toán
+                </h2>
 
-              <p className="mt-3 max-w-3xl text-sm font-medium leading-7 text-slate-600">
-                Admin có thể xác nhận payment hợp lệ để job tiếp tục hoạt động,
-                hoặc từ chối payment nếu thông tin thanh toán chưa đúng.
-              </p>
+                <p className="mt-3 max-w-3xl text-sm font-medium leading-7 text-white/70">
+                  Admin xác nhận payment hợp lệ để job chuyển sang active, hoặc
+                  từ chối payment nếu thông tin chuyển khoản chưa đúng.
+                </p>
 
-              <div className="mt-5 flex flex-wrap gap-3">
-                <Button
-                  asChild
-                  className="rounded-full bg-[#061a3a] px-5 font-extrabold text-white hover:bg-[#0b2a61]"
-                >
-                  <Link href="/admin/jobs">
-                    Mở danh sách jobs
-                    <ArrowRight className="ml-2 size-4" />
-                  </Link>
-                </Button>
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <Button
+                    asChild
+                    className="rounded-full bg-white px-5 font-extrabold text-[#061a3a] hover:bg-sky-50"
+                  >
+                    <Link href="/admin/jobs">
+                      Mở danh sách jobs
+                      <ArrowRight className="ml-2 size-4" />
+                    </Link>
+                  </Button>
 
-                <Button
-                  asChild
-                  variant="outline"
-                  className="rounded-full border-blue-200 bg-white font-extrabold"
-                >
-                  <Link href="/admin/requests">
-                    Mở requests
-                    <FileText className="ml-2 size-4" />
-                  </Link>
-                </Button>
+                  <Button
+                    asChild
+                    variant="outline"
+                    className="rounded-full border-white/20 bg-white/10 font-extrabold text-white hover:bg-white/15"
+                  >
+                    <Link href="/admin/requests">
+                      Mở requests
+                      <FileText className="ml-2 size-4" />
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <DarkSignalBox
+                  icon={<Banknote className="size-4" />}
+                  label="Total value"
+                  value={formatCurrencyVnd(totalPaymentValue)}
+                />
+
+                <DarkSignalBox
+                  icon={<CheckCircle2 className="size-4" />}
+                  label="Confirmed"
+                  value={formatCurrencyVnd(confirmedPaymentValue)}
+                />
+
+                <DarkSignalBox
+                  icon={<Clock3 className="size-4" />}
+                  label="Pending value"
+                  value={formatCurrencyVnd(pendingPaymentValue)}
+                />
               </div>
             </div>
+          </div>
 
-            <div className="grid gap-3 md:grid-cols-3">
-              <SignalBox
-                icon={<Banknote className="size-4" />}
-                label="Total value"
-                value={formatCurrencyVnd(totalPaymentValue)}
-              />
+          <div className="grid gap-3 p-6 md:grid-cols-2 xl:grid-cols-4">
+            <SignalBox
+              icon={<CreditCard className="size-4" />}
+              label="Pending payments"
+              value={`${pendingPayments.length} payment cần xử lý`}
+              tone={pendingPayments.length > 0 ? "warning" : "normal"}
+            />
 
-              <SignalBox
-                icon={<CheckCircle2 className="size-4" />}
-                label="Confirmed"
-                value={`${confirmedPayments.length} payment`}
-              />
+            <SignalBox
+              icon={<CheckCircle2 className="size-4" />}
+              label="Confirmed payments"
+              value={`${confirmedPayments.length} payment đã xác nhận`}
+            />
 
-              <SignalBox
-                icon={<Clock3 className="size-4" />}
-                label="Pending value"
-                value={formatCurrencyVnd(pendingPaymentValue)}
-                tone={pendingPaymentValue > 0 ? "warning" : "normal"}
-              />
-            </div>
+            <SignalBox
+              icon={<ShieldCheck className="size-4" />}
+              label="Rejected payments"
+              value={`${rejectedPayments.length} payment bị từ chối`}
+              tone={rejectedPayments.length > 0 ? "warning" : "normal"}
+            />
+
+            <SignalBox
+              icon={<TriangleAlert className="size-4" />}
+              label="Action required"
+              value={
+                pendingPayments.length > 0
+                  ? "Cần admin kiểm tra"
+                  : "Không có việc cần xử lý"
+              }
+              tone={pendingPayments.length > 0 ? "warning" : "normal"}
+            />
           </div>
         </SurfaceCard>
       </section>
@@ -293,11 +377,68 @@ export default async function AdminPaymentsPage() {
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
             <div>
               <p className="text-sm font-black uppercase tracking-[0.22em] text-blue-600">
-                Payment list
+                Payment queue
               </p>
 
               <h2 className="mt-3 text-2xl font-extrabold tracking-[-0.045em] text-[#061a3a]">
-                Danh sách payment
+                Payment cần xử lý trước
+              </h2>
+
+              <p className="mt-3 max-w-2xl text-sm font-medium leading-7 text-slate-600">
+                Danh sách này ưu tiên các payment đang chờ xác nhận. Sau khi
+                admin xác nhận, job sẽ được mở để designer bắt đầu làm.
+              </p>
+            </div>
+
+            <StatusPill tone={pendingPayments.length > 0 ? "warning" : "success"}>
+              {`${pendingPayments.length} pending`}
+            </StatusPill>
+          </div>
+
+          {pendingPayments.length === 0 ? (
+            <EmptyState
+              title="Không có payment đang chờ."
+              description="Các payment chờ xử lý sẽ xuất hiện tại đây để admin xác nhận hoặc từ chối."
+              href="/admin/jobs"
+              buttonLabel="Mở jobs"
+            />
+          ) : (
+            <div className="mt-6 grid gap-5">
+              {pendingPayments.map((payment) => {
+                const job = jobs.find((item) => item.id === payment.job_id);
+                const request = job
+                  ? requests.find((item) => item.id === job.request_id)
+                  : undefined;
+                const designer = job
+                  ? designers.find((item) => item.id === job.designer_id)
+                  : undefined;
+
+                return (
+                  <PaymentCard
+                    key={payment.id}
+                    payment={payment}
+                    job={job}
+                    request={request}
+                    designer={designer}
+                    highlight
+                  />
+                );
+              })}
+            </div>
+          )}
+        </SurfaceCard>
+      </section>
+
+      <section className="mt-5">
+        <SurfaceCard className="p-6">
+          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.22em] text-blue-600">
+                All payments
+              </p>
+
+              <h2 className="mt-3 text-2xl font-extrabold tracking-[-0.045em] text-[#061a3a]">
+                Toàn bộ payment
               </h2>
 
               <p className="mt-3 max-w-2xl text-sm font-medium leading-7 text-slate-600">
@@ -350,17 +491,37 @@ function PaymentCard({
   job,
   request,
   designer,
+  highlight = false,
 }: {
   payment: PaymentRow;
   job?: JobRow;
   request?: RequestRow;
   designer?: DesignerRow;
+  highlight?: boolean;
 }) {
   const paymentStatus = getPaymentStatusView(payment.status);
   const jobStatus = getJobStatusView(job?.status ?? null);
 
+  const platformFee = Number(
+    payment.platform_fee_vnd ?? job?.platform_fee_vnd ?? 0,
+  );
+
+  const designerRevenue = Number(
+    payment.designer_revenue_vnd ?? job?.designer_revenue_vnd ?? 0,
+  );
+
+  const feePercent = Number(
+    payment.platform_fee_percent ?? job?.platform_fee_percent ?? 0,
+  );
+
   return (
-    <div className="rounded-[1.35rem] border border-blue-100 bg-blue-50/65 p-5">
+    <div
+      className={`rounded-[1.35rem] border p-5 ${
+        highlight
+          ? "border-amber-200 bg-amber-50"
+          : "border-blue-100 bg-blue-50/65"
+      }`}
+    >
       <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -375,6 +536,10 @@ function PaymentCard({
                 {getSafeCategoryLabel(request.category)}
               </StatusPill>
             ) : null}
+
+            {payment.transfer_note ? (
+              <StatusPill tone="info">{payment.transfer_note}</StatusPill>
+            ) : null}
           </div>
 
           <h3 className="mt-4 text-2xl font-extrabold tracking-[-0.045em] text-[#061a3a]">
@@ -386,7 +551,7 @@ function PaymentCard({
           </p>
 
           <p className="mt-3 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-            {`Payment created at ${formatDateVi(payment.created_at)}`}
+            {`Payment created ${formatDateVi(payment.created_at)}`}
           </p>
         </div>
 
@@ -403,23 +568,37 @@ function PaymentCard({
         ) : null}
       </div>
 
-      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <InfoBox
           icon={<WalletCards className="size-4" />}
-          label="Payment amount"
+          label="Customer paid"
           value={formatCurrencyVnd(payment.amount_vnd)}
         />
 
         <InfoBox
+          icon={<CircleDollarSign className="size-4" />}
+          label="Platform fee"
+          value={
+            feePercent > 0
+              ? `${formatCurrencyVnd(platformFee)} · ${feePercent}%`
+              : formatCurrencyVnd(platformFee)
+          }
+        />
+
+        <InfoBox
           icon={<Banknote className="size-4" />}
-          label="Job agreed price"
-          value={job ? formatCurrencyVnd(job.agreed_price_vnd) : "Không có"}
+          label="Designer receives"
+          value={formatCurrencyVnd(designerRevenue)}
         />
 
         <InfoBox
           icon={<CalendarDays className="size-4" />}
-          label="Reviewed at"
-          value={payment.reviewed_at ? formatDateVi(payment.reviewed_at) : "Chưa xử lý"}
+          label="Confirmed at"
+          value={
+            payment.confirmed_at
+              ? formatDateVi(payment.confirmed_at)
+              : "Chưa xác nhận"
+          }
         />
 
         <InfoBox
@@ -430,7 +609,7 @@ function PaymentCard({
       </div>
 
       {payment.admin_note ? (
-        <div className="mt-5 rounded-[1.15rem] border border-amber-200 bg-amber-50 p-4">
+        <div className="mt-5 rounded-[1.15rem] border border-amber-200 bg-white/80 p-4">
           <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-700">
             Admin note
           </p>
@@ -639,6 +818,29 @@ function SignalBox({
   );
 }
 
+function DarkSignalBox({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-[1.15rem] border border-white/10 bg-white/10 p-4">
+      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-sky-200/75">
+        {icon}
+        {label}
+      </div>
+
+      <p className="mt-2 text-sm font-extrabold leading-6 text-white">
+        {value}
+      </p>
+    </div>
+  );
+}
+
 function InfoBox({
   icon,
   label,
@@ -721,14 +923,16 @@ function EmptyState({
 }
 
 function getPaymentStatusView(status: string) {
-  if (["paid", "confirmed", "completed"].includes(status)) {
+  if (["paid", "confirmed", "completed", "succeeded"].includes(status)) {
     return {
       label: "Đã xác nhận",
       tone: "success" as const,
     };
   }
 
-  if (["pending", "waiting", "submitted"].includes(status)) {
+  if (
+    ["pending", "waiting", "submitted", "waiting_transfer"].includes(status)
+  ) {
     return {
       label: "Chờ xác nhận",
       tone: "warning" as const,
@@ -767,6 +971,13 @@ function getJobStatusView(status: string | null) {
     return {
       label: "Job đang làm",
       tone: "info" as const,
+    };
+  }
+
+  if (status === "payment_pending") {
+    return {
+      label: "Job chờ payment",
+      tone: "warning" as const,
     };
   }
 

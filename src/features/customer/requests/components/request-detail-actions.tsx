@@ -1,6 +1,12 @@
 "use client";
 
-import { ArrowRight, BriefcaseBusiness, Loader2, RefreshCcw, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  BriefcaseBusiness,
+  Loader2,
+  RefreshCcw,
+  Sparkles,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -10,10 +16,12 @@ import { Button } from "@/components/ui/button";
 
 type GenerateBriefButtonProps = {
   requestId: string;
+  nextHref?: string;
 };
 
 type GenerateMatchesButtonProps = {
   requestId: string;
+  nextHref?: string;
 };
 
 type CreateJobFromMatchButtonProps = {
@@ -26,17 +34,14 @@ type OpenJobButtonProps = {
   jobId: string;
 };
 
-export function GenerateBriefButton({ requestId }: GenerateBriefButtonProps) {
+export function GenerateBriefButton({
+  requestId,
+  nextHref,
+}: GenerateBriefButtonProps) {
   const router = useRouter();
   const [isGenerating, setIsGenerating] = useState(false);
 
   async function handleGenerateBrief() {
-    const confirmed = window.confirm(
-      "Tạo lại AI brief cho request này? Brief cũ có thể được cập nhật.",
-    );
-
-    if (!confirmed) return;
-
     setIsGenerating(true);
 
     try {
@@ -59,9 +64,10 @@ export function GenerateBriefButton({ requestId }: GenerateBriefButtonProps) {
       }
 
       toast.success("Đã tạo AI brief", {
-        description: result.message,
+        description: "Tiếp theo: kiểm tra và chốt brief.",
       });
 
+      router.push(nextHref ?? `/customer/requests/${requestId}/brief-review`);
       router.refresh();
     } finally {
       setIsGenerating(false);
@@ -84,7 +90,7 @@ export function GenerateBriefButton({ requestId }: GenerateBriefButtonProps) {
       ) : (
         <>
           <Sparkles className="mr-2 size-4" />
-          Tạo lại AI brief
+          Tạo AI brief
         </>
       )}
     </Button>
@@ -93,17 +99,12 @@ export function GenerateBriefButton({ requestId }: GenerateBriefButtonProps) {
 
 export function GenerateMatchesButton({
   requestId,
+  nextHref,
 }: GenerateMatchesButtonProps) {
   const router = useRouter();
   const [isGenerating, setIsGenerating] = useState(false);
 
   async function handleGenerateMatches() {
-    const confirmed = window.confirm(
-      "Tạo lại designer matching cho request này? Danh sách match cũ sẽ được cập nhật theo designer đã được admin duyệt.",
-    );
-
-    if (!confirmed) return;
-
     setIsGenerating(true);
 
     try {
@@ -126,9 +127,10 @@ export function GenerateMatchesButton({
       }
 
       toast.success("Đã tạo designer matches", {
-        description: result.message,
+        description: "Tiếp theo: chọn designer phù hợp.",
       });
 
+      router.push(nextHref ?? `/customer/requests/${requestId}`);
       router.refresh();
     } finally {
       setIsGenerating(false);
@@ -150,7 +152,7 @@ export function GenerateMatchesButton({
       ) : (
         <>
           <RefreshCcw className="mr-2 size-4" />
-          Tạo lại matching
+          Tạo designer matching
         </>
       )}
     </Button>
@@ -184,6 +186,11 @@ export function CreateJobFromMatchButton({
 
       const result = (await response.json()) as {
         message?: string;
+        jobId?: string;
+        job_id?: string;
+        job?: {
+          id?: string;
+        };
       };
 
       if (!response.ok) {
@@ -193,9 +200,19 @@ export function CreateJobFromMatchButton({
         return;
       }
 
+      const createdJobId = result.jobId ?? result.job_id ?? result.job?.id;
+
       toast.success("Đã tạo job", {
-        description: result.message,
+        description: createdJobId
+          ? "Tiếp theo: thanh toán và theo dõi job."
+          : result.message,
       });
+
+      if (createdJobId) {
+        router.push(`/customer/jobs/${createdJobId}`);
+      } else {
+        router.push(`/customer/requests/${requestId}`);
+      }
 
       router.refresh();
     } finally {

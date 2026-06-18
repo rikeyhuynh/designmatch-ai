@@ -42,7 +42,6 @@ type JobRow = {
   designer_id: string;
   title: string;
   status: string;
-  agreed_price_vnd: number;
   due_at: string | null;
   completed_at: string | null;
   created_at: string;
@@ -107,7 +106,6 @@ export default async function CustomerJobsPage() {
             designer_id,
             title,
             status,
-            agreed_price_vnd,
             due_at,
             completed_at,
             created_at
@@ -161,13 +159,8 @@ export default async function CustomerJobsPage() {
   const updates = (updatesResult.data ?? []) as unknown as JobUpdateRow[];
   const reviews = (reviewsResult.data ?? []) as unknown as ReviewRow[];
 
-  const totalJobValue = jobs.reduce(
-    (total, job) => total + Number(job.agreed_price_vnd ?? 0),
-    0,
-  );
-
-  const confirmedPayments = payments.filter((payment) =>
-    ["paid", "confirmed", "completed"].includes(payment.status),
+  const confirmedPayments = payments.filter(
+    (payment) => payment.status === "confirmed",
   );
 
   const totalConfirmedPaymentValue = confirmedPayments.reduce(
@@ -175,10 +168,17 @@ export default async function CustomerJobsPage() {
     0,
   );
 
+  const totalPaymentValue = payments.reduce(
+    (total, payment) => total + Number(payment.amount_vnd ?? 0),
+    0,
+  );
+
   const activeJobs = jobs.filter((job) => job.status === "active").length;
   const completedJobs = jobs.filter((job) => job.status === "completed").length;
   const pendingPayments = payments.filter((payment) =>
-    ["pending", "waiting", "submitted"].includes(payment.status),
+    ["waiting_transfer", "waiting_admin_confirm", "rejected"].includes(
+      payment.status,
+    ),
   ).length;
 
   return (
@@ -278,8 +278,8 @@ export default async function CustomerJobsPage() {
             <div className="grid gap-3 md:grid-cols-3">
               <SignalBox
                 icon={<Banknote className="size-4" />}
-                label="Job value"
-                value={formatCurrencyVnd(totalJobValue)}
+                label="Payment value"
+                value={formatCurrencyVnd(totalPaymentValue)}
               />
 
               <SignalBox
@@ -291,7 +291,7 @@ export default async function CustomerJobsPage() {
               <SignalBox
                 icon={<Clock3 className="size-4" />}
                 label="Pending"
-                value={`${pendingPayments} payment chờ duyệt`}
+                value={`${pendingPayments} payment cần xử lý`}
                 tone={pendingPayments > 0 ? "warning" : "normal"}
               />
             </div>
@@ -312,8 +312,8 @@ export default async function CustomerJobsPage() {
               </h2>
 
               <p className="mt-3 max-w-2xl text-sm font-medium leading-7 text-slate-600">
-                Mỗi job được liên kết với một request, một designer và một payment
-                tương ứng.
+                Mỗi job được liên kết với một request, một designer và một
+                payment tương ứng.
               </p>
             </div>
 
@@ -435,8 +435,8 @@ function JobCard({
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <InfoBox
           icon={<WalletCards className="size-4" />}
-          label="Agreed price"
-          value={formatCurrencyVnd(job.agreed_price_vnd)}
+          label="Số tiền thanh toán"
+          value={payment ? formatCurrencyVnd(payment.amount_vnd) : "Chưa có"}
         />
 
         <InfoBox
@@ -454,7 +454,7 @@ function JobCard({
         <InfoBox
           icon={<CreditCard className="size-4" />}
           label="Payment"
-          value={payment ? formatCurrencyVnd(payment.amount_vnd) : "Chưa có"}
+          value={paymentStatus.label}
         />
       </div>
 
@@ -732,10 +732,10 @@ function EmptyState({
 }
 
 function getJobStatusView(status: string) {
-  if (status === "completed") {
+  if (status === "payment_pending") {
     return {
-      label: "Hoàn thành",
-      tone: "success" as const,
+      label: "Chờ thanh toán",
+      tone: "warning" as const,
     };
   }
 
@@ -743,6 +743,27 @@ function getJobStatusView(status: string) {
     return {
       label: "Đang thực hiện",
       tone: "info" as const,
+    };
+  }
+
+  if (status === "reviewing") {
+    return {
+      label: "Đang duyệt bản cuối",
+      tone: "info" as const,
+    };
+  }
+
+  if (status === "completed") {
+    return {
+      label: "Hoàn thành",
+      tone: "success" as const,
+    };
+  }
+
+  if (status === "disputed") {
+    return {
+      label: "Đang tranh chấp",
+      tone: "warning" as const,
     };
   }
 
@@ -767,17 +788,31 @@ function getPaymentStatusView(status: string | null) {
     };
   }
 
-  if (["paid", "confirmed", "completed"].includes(status)) {
+  if (status === "not_required") {
     return {
-      label: "Đã xác nhận thanh toán",
-      tone: "success" as const,
+      label: "Không cần thanh toán",
+      tone: "neutral" as const,
     };
   }
 
-  if (["pending", "waiting", "submitted"].includes(status)) {
+  if (status === "waiting_transfer") {
     return {
-      label: "Chờ xác nhận thanh toán",
+      label: "Chờ chuyển khoản",
       tone: "warning" as const,
+    };
+  }
+
+  if (status === "waiting_admin_confirm") {
+    return {
+      label: "Chờ admin xác nhận",
+      tone: "info" as const,
+    };
+  }
+
+  if (status === "confirmed") {
+    return {
+      label: "Đã xác nhận thanh toán",
+      tone: "success" as const,
     };
   }
 

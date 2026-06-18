@@ -2,13 +2,21 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   ArrowRight,
+  Award,
   BriefcaseBusiness,
   CalendarDays,
   CheckCircle2,
+  CircleAlert,
   FileImage,
+  Gauge,
   ImageIcon,
+  Layers3,
   Palette,
+  Sparkles,
   Star,
+  Store,
+  Tags,
+  Type,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -19,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { CreatePortfolioItemForm } from "@/features/designer/portfolio/components/create-portfolio-item-form";
 import { DeletePortfolioItemButton } from "@/features/designer/portfolio/components/delete-portfolio-item-button";
 import { requireRole } from "@/lib/auth/guards";
-import { getCategoryLabel } from "@/lib/domain/labels";
+import { getCategoryLabel, getIndustryLabel } from "@/lib/domain/labels";
 import { formatDateVi } from "@/lib/format";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -39,8 +47,34 @@ type PortfolioRow = {
   title: string;
   description: string | null;
   category: string;
+  industry: string | null;
   image_url: string | null;
   created_at: string;
+  ai_analysis_status: string | null;
+  ai_analyzed_at: string | null;
+  ai_style_tags: string[] | null;
+  ai_industry_tags: string[] | null;
+  ai_category_tags: string[] | null;
+  ai_visual_summary: string | null;
+  ai_confidence_score: number | null;
+};
+
+type DesignerStyleDnaRow = {
+  designer_id: string | null;
+  designer_profile_id: string | null;
+  analyzed_portfolio_count: number | null;
+  style_tags: string[] | null;
+  industry_tags: string[] | null;
+  category_tags: string[] | null;
+  visual_strengths: string[] | null;
+  common_moods: string[] | null;
+  color_preferences: string[] | null;
+  typography_preferences: string[] | null;
+  layout_preferences: string[] | null;
+  dna_summary: string | null;
+  confidence_score: number | null;
+  last_analyzed_at: string | null;
+  updated_at: string | null;
 };
 
 type JobRow = {
@@ -64,54 +98,94 @@ export default async function DesignerPortfolioPage() {
 
   const adminSupabase = createSupabaseAdminClient() as any;
 
-  const [designerResult, portfolioResult, jobsResult, reviewsResult] =
-    await Promise.all([
-      adminSupabase
-        .from("designer_profiles")
-        .select(
-          `
-          id,
-          display_name,
-          headline,
-          rating,
-          completed_jobs,
-          response_time_hours,
-          availability,
-          verification_status
-        `,
-        )
-        .eq("id", designerProfile.id)
-        .maybeSingle(),
+  const [
+    designerResult,
+    portfolioResult,
+    styleDnaResult,
+    jobsResult,
+    reviewsResult,
+  ] = await Promise.all([
+    adminSupabase
+      .from("designer_profiles")
+      .select(
+        `
+        id,
+        display_name,
+        headline,
+        rating,
+        completed_jobs,
+        response_time_hours,
+        availability,
+        verification_status
+      `,
+      )
+      .eq("id", designerProfile.id)
+      .maybeSingle(),
 
-      adminSupabase
-        .from("portfolio_items")
-        .select(
-          `
-          id,
-          title,
-          description,
-          category,
-          image_url,
-          created_at
-        `,
-        )
-        .eq("designer_id", designerProfile.id)
-        .order("created_at", { ascending: false }),
+    adminSupabase
+      .from("portfolio_items")
+      .select(
+        `
+        id,
+        title,
+        description,
+        category,
+        industry,
+        image_url,
+        created_at,
+        ai_analysis_status,
+        ai_analyzed_at,
+        ai_style_tags,
+        ai_industry_tags,
+        ai_category_tags,
+        ai_visual_summary,
+        ai_confidence_score
+      `,
+      )
+      .eq("designer_id", designerProfile.id)
+      .order("created_at", { ascending: false }),
 
-      adminSupabase
-        .from("jobs")
-        .select("id, status")
-        .eq("designer_id", designerProfile.id),
+    adminSupabase
+      .from("designer_style_dna")
+      .select(
+        `
+        designer_id,
+        designer_profile_id,
+        analyzed_portfolio_count,
+        style_tags,
+        industry_tags,
+        category_tags,
+        visual_strengths,
+        common_moods,
+        color_preferences,
+        typography_preferences,
+        layout_preferences,
+        dna_summary,
+        confidence_score,
+        last_analyzed_at,
+        updated_at
+      `,
+      )
+      .or(`designer_id.eq.${designerProfile.id},designer_profile_id.eq.${designerProfile.id}`)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
 
-      adminSupabase
-        .from("job_reviews")
-        .select("id, rating")
-        .eq("designer_id", designerProfile.id),
-    ]);
+    adminSupabase
+      .from("jobs")
+      .select("id, status")
+      .eq("designer_id", designerProfile.id),
+
+    adminSupabase
+      .from("job_reviews")
+      .select("id, rating")
+      .eq("designer_id", designerProfile.id),
+  ]);
 
   const designer = designerResult.data as DesignerProfileRow | null;
   const portfolioItems = (portfolioResult.data ??
     []) as unknown as PortfolioRow[];
+  const styleDna = styleDnaResult.data as DesignerStyleDnaRow | null;
   const jobs = (jobsResult.data ?? []) as unknown as JobRow[];
   const reviews = (reviewsResult.data ?? []) as unknown as ReviewRow[];
 
@@ -126,9 +200,27 @@ export default async function DesignerPortfolioPage() {
 
   const portfolioWithoutImages = portfolioItems.length - portfolioWithImages;
 
+  const analyzedPortfolioItems = portfolioItems.filter(
+    (item) => item.ai_analysis_status === "completed",
+  );
+
+  const failedPortfolioItems = portfolioItems.filter(
+    (item) => item.ai_analysis_status === "failed",
+  );
+
+  const pendingPortfolioItems = portfolioItems.filter((item) =>
+    ["not_started", "pending", "processing", null, undefined].includes(
+      item.ai_analysis_status,
+    ),
+  );
+
   const uniqueCategories = Array.from(
     new Set(portfolioItems.map((item) => item.category).filter(Boolean)),
   );
+
+  const uniqueIndustries = Array.from(
+    new Set(portfolioItems.map((item) => item.industry).filter(Boolean)),
+  ) as string[];
 
   const activeJobs = jobs.filter((job) => job.status === "active").length;
 
@@ -145,11 +237,16 @@ export default async function DesignerPortfolioPage() {
         ) / 10
       : Number(designer?.rating ?? 0);
 
+  const dnaConfidence = Number(styleDna?.confidence_score ?? 0);
+  const analyzedCount =
+    Number(styleDna?.analyzed_portfolio_count ?? 0) ||
+    analyzedPortfolioItems.length;
+
   return (
     <DashboardShell
       role="designer"
       title="Portfolio"
-      description="Quản lý dữ liệu portfolio thật dùng cho Style DNA và designer matching."
+      description="Quản lý portfolio, AI analysis và Designer Style DNA dùng cho matching."
       userName={profile.full_name}
       userEmail={authState.userEmail}
     >
@@ -157,6 +254,7 @@ export default async function DesignerPortfolioPage() {
         errors={[
           designerResult.error?.message,
           portfolioResult.error?.message,
+          styleDnaResult.error?.message,
           jobsResult.error?.message,
           reviewsResult.error?.message,
         ]}
@@ -172,18 +270,19 @@ export default async function DesignerPortfolioPage() {
         />
 
         <MetricCard
-          label="Has image"
-          value={`${portfolioWithImages}`}
-          description="Portfolio đã có ảnh preview"
-          icon={<ImageIcon className="size-5" />}
-          tone="success"
+          label="AI analyzed"
+          value={`${analyzedPortfolioItems.length}`}
+          description="Portfolio đã được AI phân tích"
+          icon={<Sparkles className="size-5" />}
+          tone={analyzedPortfolioItems.length > 0 ? "success" : "normal"}
         />
 
         <MetricCard
-          label="Categories"
-          value={`${uniqueCategories.length}`}
-          description="Số nhóm thiết kế đang có"
-          icon={<Palette className="size-5" />}
+          label="DNA confidence"
+          value={`${dnaConfidence}/100`}
+          description="Độ tin cậy Style DNA"
+          icon={<Gauge className="size-5" />}
+          tone={dnaConfidence >= 70 ? "success" : "warning"}
         />
 
         <MetricCard
@@ -195,7 +294,7 @@ export default async function DesignerPortfolioPage() {
         />
       </section>
 
-      <section className="mt-5 grid gap-5 xl:grid-cols-[0.78fr_1.22fr]">
+      <section className="mt-5 grid gap-5 xl:grid-cols-[0.72fr_1.28fr]">
         <div className="grid gap-5">
           <SurfaceCard className="p-6">
             <p className="text-sm font-black uppercase tracking-[0.22em] text-blue-600">
@@ -209,8 +308,8 @@ export default async function DesignerPortfolioPage() {
             <p className="mt-2 text-sm font-bold text-blue-700">{headline}</p>
 
             <p className="mt-3 text-sm font-medium leading-7 text-slate-600">
-              Portfolio là dữ liệu quan trọng để hệ thống hiểu phong cách thiết
-              kế của bạn và đề xuất bạn cho các brief phù hợp hơn.
+              Portfolio là dữ liệu chính để AI hiểu phong cách thiết kế, ngành
+              phù hợp và mức độ match của bạn với từng brief khách hàng.
             </p>
 
             <div className="mt-5 grid gap-3 md:grid-cols-3 xl:grid-cols-1">
@@ -251,6 +350,17 @@ export default async function DesignerPortfolioPage() {
           <CreatePortfolioItemForm />
         </div>
 
+        <StyleDnaDashboard
+          styleDna={styleDna}
+          analyzedCount={analyzedCount}
+          pendingCount={pendingPortfolioItems.length}
+          failedCount={failedPortfolioItems.length}
+          uniqueCategories={uniqueCategories}
+          uniqueIndustries={uniqueIndustries}
+        />
+      </section>
+
+      <section className="mt-5">
         <SurfaceCard className="p-6">
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
             <div>
@@ -263,21 +373,28 @@ export default async function DesignerPortfolioPage() {
               </h2>
 
               <p className="mt-3 max-w-2xl text-sm font-medium leading-7 text-slate-600">
-                Đây là toàn bộ portfolio item thật đang gắn với tài khoản
-                designer hiện tại.
+                Mỗi portfolio có ảnh sẽ được AI phân tích để cập nhật Style DNA.
+                DNA được cộng dồn từ nhiều portfolio, không bị ghi đè bởi item
+                mới nhất.
               </p>
             </div>
 
-            <StatusPill tone="info">{`${portfolioItems.length} items`}</StatusPill>
+            <div className="flex flex-wrap gap-2">
+              <StatusPill tone="info">{`${portfolioItems.length} items`}</StatusPill>
+              <StatusPill tone="success">{`${analyzedPortfolioItems.length} analyzed`}</StatusPill>
+              {failedPortfolioItems.length > 0 ? (
+                <StatusPill tone="warning">{`${failedPortfolioItems.length} failed`}</StatusPill>
+              ) : null}
+            </div>
           </div>
 
           {portfolioItems.length === 0 ? (
             <EmptyState
               title="Chưa có portfolio item."
-              description="Hãy dùng form bên trái để thêm portfolio đầu tiên vào CSDL."
+              description="Hãy dùng form bên trái để thêm portfolio đầu tiên. Portfolio có ảnh sẽ được AI phân tích để tạo Designer Style DNA."
             />
           ) : (
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {portfolioItems.map((item) => (
                 <PortfolioCard key={item.id} item={item} />
               ))}
@@ -330,11 +447,237 @@ export default async function DesignerPortfolioPage() {
   );
 }
 
+function StyleDnaDashboard({
+  styleDna,
+  analyzedCount,
+  pendingCount,
+  failedCount,
+  uniqueCategories,
+  uniqueIndustries,
+}: {
+  styleDna: DesignerStyleDnaRow | null;
+  analyzedCount: number;
+  pendingCount: number;
+  failedCount: number;
+  uniqueCategories: string[];
+  uniqueIndustries: string[];
+}) {
+  if (!styleDna) {
+    return (
+      <SurfaceCard className="border-blue-100 bg-white p-6">
+        <div className="flex items-start gap-3">
+          <div className="grid size-12 shrink-0 place-items-center rounded-2xl bg-blue-50 text-blue-700 ring-1 ring-blue-100">
+            <Sparkles className="size-5" />
+          </div>
+
+          <div>
+            <p className="text-sm font-black uppercase tracking-[0.22em] text-blue-600">
+              AI Style DNA
+            </p>
+
+            <h2 className="mt-3 text-3xl font-extrabold tracking-[-0.055em] text-[#061a3a]">
+              Chưa có Style DNA
+            </h2>
+
+            <p className="mt-3 text-sm font-medium leading-7 text-slate-600">
+              Hãy upload ít nhất một portfolio có ảnh. Sau khi AI phân tích,
+              hệ thống sẽ tạo Style DNA gồm style, mood, màu sắc, typography,
+              layout và điểm mạnh thị giác của bạn.
+            </p>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+              <SignalBox
+                icon={<Sparkles className="size-4" />}
+                label="Analyzed"
+                value={`${analyzedCount} item`}
+              />
+
+              <SignalBox
+                icon={<CircleAlert className="size-4" />}
+                label="Pending"
+                value={`${pendingCount} item`}
+                tone={pendingCount > 0 ? "warning" : "normal"}
+              />
+
+              <SignalBox
+                icon={<CircleAlert className="size-4" />}
+                label="Failed"
+                value={`${failedCount} item`}
+                tone={failedCount > 0 ? "warning" : "normal"}
+              />
+            </div>
+          </div>
+        </div>
+      </SurfaceCard>
+    );
+  }
+
+  const confidence = Number(styleDna.confidence_score ?? 0);
+
+  return (
+    <SurfaceCard className="overflow-hidden p-0">
+      <div className="bg-gradient-to-br from-[#061a3a] via-[#0b2a61] to-blue-700 p-6 text-white">
+        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
+          <div>
+            <p className="text-sm font-black uppercase tracking-[0.22em] text-sky-200/70">
+              AI Style DNA
+            </p>
+
+            <h2 className="mt-3 text-3xl font-extrabold tracking-[-0.055em] text-white">
+              Hồ sơ phong cách thị giác
+            </h2>
+
+            <p className="mt-3 max-w-3xl text-sm font-medium leading-7 text-white/70">
+              Style DNA được tổng hợp từ toàn bộ portfolio đã được AI phân tích.
+              Đây là dữ liệu dùng để match bạn với brief phù hợp.
+            </p>
+          </div>
+
+          <div className="rounded-[1.25rem] border border-white/10 bg-white/10 px-5 py-4 text-center">
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-sky-200/75">
+              Confidence
+            </p>
+
+            <p className="mt-2 text-5xl font-black tracking-[-0.08em] text-white">
+              {confidence}
+            </p>
+
+            <p className="mt-1 text-xs font-bold uppercase tracking-[0.14em] text-white/50">
+              / 100
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-5 p-6">
+        <div className="grid gap-3 md:grid-cols-3">
+          <SignalBox
+            icon={<Sparkles className="size-4" />}
+            label="Analyzed"
+            value={`${analyzedCount} portfolio`}
+          />
+
+          <SignalBox
+            icon={<CircleAlert className="size-4" />}
+            label="Pending"
+            value={`${pendingCount} portfolio`}
+            tone={pendingCount > 0 ? "warning" : "normal"}
+          />
+
+          <SignalBox
+            icon={<CircleAlert className="size-4" />}
+            label="Failed"
+            value={`${failedCount} portfolio`}
+            tone={failedCount > 0 ? "warning" : "normal"}
+          />
+        </div>
+
+        {styleDna.dna_summary ? (
+          <div className="rounded-[1.2rem] border border-blue-100 bg-blue-50/65 p-5">
+            <div className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-blue-600">
+              <Sparkles className="size-4" />
+              DNA summary
+            </div>
+
+            <p className="mt-3 text-sm font-medium leading-7 text-slate-700">
+              {styleDna.dna_summary}
+            </p>
+          </div>
+        ) : null}
+
+        <div className="grid gap-4 xl:grid-cols-2">
+          <TagPanel
+            title="Style tags"
+            icon={<Tags className="size-4" />}
+            items={styleDna.style_tags ?? []}
+            emptyText="Chưa có style tag."
+          />
+
+          <TagPanel
+            title="Mood nổi bật"
+            icon={<Sparkles className="size-4" />}
+            items={styleDna.common_moods ?? []}
+            emptyText="Chưa có mood nổi bật."
+          />
+
+          <TagPanel
+            title="Điểm mạnh thị giác"
+            icon={<Award className="size-4" />}
+            items={styleDna.visual_strengths ?? []}
+            emptyText="Chưa có điểm mạnh thị giác."
+          />
+
+          <TagPanel
+            title="Màu sắc thường dùng"
+            icon={<Palette className="size-4" />}
+            items={styleDna.color_preferences ?? []}
+            emptyText="Chưa có dữ liệu màu sắc."
+          />
+
+          <TagPanel
+            title="Typography"
+            icon={<Type className="size-4" />}
+            items={styleDna.typography_preferences ?? []}
+            emptyText="Chưa có dữ liệu typography."
+          />
+
+          <TagPanel
+            title="Layout"
+            icon={<Layers3 className="size-4" />}
+            items={styleDna.layout_preferences ?? []}
+            emptyText="Chưa có dữ liệu layout."
+          />
+
+          <TagPanel
+            title="Ngành phù hợp"
+            icon={<Store className="size-4" />}
+            items={
+              (styleDna.industry_tags ?? []).length > 0
+                ? styleDna.industry_tags ?? []
+                : uniqueIndustries.map(getSafeIndustryLabel)
+            }
+            emptyText="Chưa có ngành phù hợp."
+          />
+
+          <TagPanel
+            title="Category phù hợp"
+            icon={<Palette className="size-4" />}
+            items={
+              (styleDna.category_tags ?? []).length > 0
+                ? styleDna.category_tags ?? []
+                : uniqueCategories.map(getSafeCategoryLabel)
+            }
+            emptyText="Chưa có category phù hợp."
+          />
+        </div>
+
+        <div className="rounded-[1.15rem] border border-blue-100 bg-white p-4">
+          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-blue-600">
+            <CalendarDays className="size-4" />
+            Cập nhật gần nhất
+          </div>
+
+          <p className="mt-2 text-sm font-extrabold leading-6 text-[#061a3a]">
+            {styleDna.last_analyzed_at
+              ? formatDateVi(styleDna.last_analyzed_at)
+              : styleDna.updated_at
+                ? formatDateVi(styleDna.updated_at)
+                : "Chưa có thời gian cập nhật"}
+          </p>
+        </div>
+      </div>
+    </SurfaceCard>
+  );
+}
+
 function PortfolioCard({ item }: { item: PortfolioRow }) {
+  const aiStatus = getAiAnalysisStatusView(item.ai_analysis_status);
+
   return (
     <div className="overflow-hidden rounded-[1.25rem] border border-blue-100 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
       <div className="grid aspect-[4/3] place-items-center bg-blue-50">
         {item.image_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={item.image_url}
             alt={item.title}
@@ -356,11 +699,13 @@ function PortfolioCard({ item }: { item: PortfolioRow }) {
             {getSafeCategoryLabel(item.category)}
           </StatusPill>
 
-          {item.image_url ? (
-            <StatusPill tone="success">Có ảnh</StatusPill>
-          ) : (
-            <StatusPill tone="warning">Chưa có ảnh</StatusPill>
-          )}
+          {item.industry ? (
+            <StatusPill tone="info">
+              {getSafeIndustryLabel(item.industry)}
+            </StatusPill>
+          ) : null}
+
+          <StatusPill tone={aiStatus.tone}>{aiStatus.label}</StatusPill>
         </div>
 
         <h3 className="mt-4 text-xl font-extrabold tracking-[-0.04em] text-[#061a3a]">
@@ -368,7 +713,7 @@ function PortfolioCard({ item }: { item: PortfolioRow }) {
         </h3>
 
         {item.description ? (
-          <p className="mt-3 text-sm font-medium leading-7 text-slate-600">
+          <p className="mt-3 line-clamp-3 text-sm font-medium leading-7 text-slate-600">
             {item.description}
           </p>
         ) : (
@@ -377,16 +722,69 @@ function PortfolioCard({ item }: { item: PortfolioRow }) {
           </p>
         )}
 
-        <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50/65 p-4">
-          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-blue-600">
-            <CalendarDays className="size-4" />
-            Created
+        {item.ai_visual_summary ? (
+          <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50/65 p-4">
+            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-blue-600">
+              <Sparkles className="size-4" />
+              AI visual summary
+            </div>
+
+            <p className="mt-2 line-clamp-4 text-sm font-medium leading-7 text-slate-700">
+              {item.ai_visual_summary}
+            </p>
+          </div>
+        ) : null}
+
+        <div className="mt-5 grid gap-3">
+          <TagPanel
+            title="AI style tags"
+            icon={<Tags className="size-4" />}
+            items={item.ai_style_tags ?? []}
+            emptyText="Chưa có tag AI."
+            compact
+          />
+
+          <TagPanel
+            title="AI industry/category"
+            icon={<Store className="size-4" />}
+            items={[
+              ...(item.ai_industry_tags ?? []),
+              ...(item.ai_category_tags ?? []),
+            ]}
+            emptyText="Chưa có tag ngành/category."
+            compact
+          />
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <div className="rounded-2xl border border-blue-100 bg-blue-50/65 p-4">
+            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-blue-600">
+              <Gauge className="size-4" />
+              AI confidence
+            </div>
+
+            <p className="mt-2 text-sm font-extrabold leading-6 text-[#061a3a]">
+              {Number(item.ai_confidence_score ?? 0)}/100
+            </p>
           </div>
 
-          <p className="mt-2 text-sm font-extrabold leading-6 text-[#061a3a]">
-            {formatDateVi(item.created_at)}
-          </p>
+          <div className="rounded-2xl border border-blue-100 bg-blue-50/65 p-4">
+            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-blue-600">
+              <CalendarDays className="size-4" />
+              Created
+            </div>
+
+            <p className="mt-2 text-sm font-extrabold leading-6 text-[#061a3a]">
+              {formatDateVi(item.created_at)}
+            </p>
+          </div>
         </div>
+
+        {item.ai_analyzed_at ? (
+          <p className="mt-3 text-xs font-semibold leading-5 text-slate-500">
+            AI analyzed: {formatDateVi(item.ai_analyzed_at)}
+          </p>
+        ) : null}
 
         <div className="mt-4 flex flex-wrap gap-2">
           <DeletePortfolioItemButton
@@ -395,6 +793,49 @@ function PortfolioCard({ item }: { item: PortfolioRow }) {
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+function TagPanel({
+  title,
+  icon,
+  items,
+  emptyText,
+  compact = false,
+}: {
+  title: string;
+  icon: ReactNode;
+  items: string[];
+  emptyText: string;
+  compact?: boolean;
+}) {
+  const realItems = items.filter(Boolean);
+
+  return (
+    <div
+      className={`rounded-[1.15rem] border border-blue-100 bg-white ${
+        compact ? "p-3" : "p-4"
+      }`}
+    >
+      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-blue-600">
+        {icon}
+        {title}
+      </div>
+
+      {realItems.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {realItems.slice(0, compact ? 8 : 12).map((item) => (
+            <StatusPill key={item} tone="neutral">
+              {item}
+            </StatusPill>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-3 text-sm font-medium leading-6 text-slate-500">
+          {emptyText}
+        </p>
+      )}
     </div>
   );
 }
@@ -538,10 +979,53 @@ function EmptyState({
   );
 }
 
+function getAiAnalysisStatusView(status: string | null) {
+  if (status === "completed") {
+    return {
+      label: "AI analyzed",
+      tone: "success" as const,
+    };
+  }
+
+  if (status === "failed") {
+    return {
+      label: "AI failed",
+      tone: "warning" as const,
+    };
+  }
+
+  if (status === "processing" || status === "pending") {
+    return {
+      label: "AI processing",
+      tone: "info" as const,
+    };
+  }
+
+  if (status === "skipped") {
+    return {
+      label: "AI skipped",
+      tone: "neutral" as const,
+    };
+  }
+
+  return {
+    label: "Not analyzed",
+    tone: "neutral" as const,
+  };
+}
+
 function getSafeCategoryLabel(category: string) {
   try {
     return getCategoryLabel(category as Parameters<typeof getCategoryLabel>[0]);
   } catch {
     return category;
+  }
+}
+
+function getSafeIndustryLabel(industry: string) {
+  try {
+    return getIndustryLabel(industry as Parameters<typeof getIndustryLabel>[0]);
+  } catch {
+    return industry;
   }
 }

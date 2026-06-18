@@ -1,0 +1,24 @@
+﻿{
+  "designRequestId": "87310645-77e1-4cb1-80e9-6761b3d812f3",
+  "title": "Poster khai trương quán trà sữa Maycha",
+  "businessName": "Maycha",
+  "businessLocation": "Đà Nẵng",
+  "productDescription": "Ly trà sữa tone nâu kem, quán chuẩn bị khai trương ở Đà Nẵng",
+  "designType": "Poster khai trương",
+  "targetAudience": "Học sinh, sinh viên, dân văn phòng trẻ",
+  "preferredStyle": "Korean cafe, cozy, trẻ trung",
+  "preferredColors": "Nâu kem, trắng kem",
+  "budget": "500.000đ",
+  "deadline": "3 ngày",
+  "channel": "Facebook post, Instagram story",
+  "visualIntakeResult": {
+    "detected_industry": "fnb",
+    "detected_product_type": "Trà sữa",
+    "detected_mood_tags": ["vui vẻ", "sôi động", "khuyến mãi", "trẻ trung"],
+    "suggested_style_tags": ["korean_cafe", "cozy_minimal", "gen_z_bold", "pastel_soft"],
+    "recommended_channels": ["Facebook", "Instagram", "TikTok"],
+    "visual_summary": "Poster quảng cáo trà sữa với màu xanh ngọc, nâu sữa, mood trẻ trung, nhiều yếu tố khuyến mãi.",
+    "designer_matching_notes": "Ưu tiên designer có kinh nghiệm F&B, biết xử lý màu tươi sáng và typography bắt mắt.",
+    "confidence_score": 95
+  }
+}

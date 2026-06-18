@@ -9,6 +9,8 @@ import {
   CircleDollarSign,
   Clock3,
   FileText,
+  ImageIcon,
+  LayoutTemplate,
   Palette,
   Sparkles,
   Store,
@@ -24,6 +26,8 @@ import { requireRole } from "@/lib/auth/guards";
 import { getCategoryLabel, getIndustryLabel } from "@/lib/domain/labels";
 import { formatCurrencyVnd, formatDateVi } from "@/lib/format";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+
+type JsonRecord = Record<string, any>;
 
 type MatchRow = {
   id: string;
@@ -50,12 +54,25 @@ type RequestRow = {
 
 type AiBriefRow = {
   id: string;
-  request_id: string;
-  objective: string;
-  visual_direction: string;
+  request_id: string | null;
+  design_request_id: string | null;
+  objective: string | null;
+  visual_direction: string | null;
   key_message: string | null;
-  brief_completeness_score: number;
+  brief_completeness_score: number | null;
   created_at: string;
+  brief_json: unknown;
+  customer_edited_brief_json: unknown;
+  final_brief_json: unknown;
+  project_title: string | null;
+  business_context: string | null;
+  design_objective: string | null;
+  target_audience: string | null;
+  deliverables: string[] | null;
+  content_requirements: string[] | null;
+  technical_requirements: string[] | null;
+  references_to_collect: string[] | null;
+  designer_notes: string | null;
 };
 
 type JobRow = {
@@ -77,6 +94,77 @@ type DesignerRow = {
   completed_jobs: number;
   response_time_hours: number;
   availability: string | null;
+};
+
+type AiDesignerMatchScoreRow = {
+  request_id: string;
+  designer_id: string;
+  portfolio_fit_score: number | null;
+  style_fit_score: number | null;
+  vibe_fit_score: number | null;
+  industry_context_fit_score: number | null;
+  budget_fit_score: number | null;
+  not_same_style_but_same_vibe: boolean | null;
+  risk_flags: string[] | null;
+  matched_portfolio_evidence: unknown;
+  analysis_json: unknown;
+};
+
+type SelectedConceptRow = {
+  id: string;
+  design_request_id: string;
+  concept_name: string | null;
+  concept_summary: string | null;
+  strategic_role: string | null;
+  mood_tags: string[] | null;
+  style_tags: string[] | null;
+  color_palette: unknown;
+  typography_direction: string | null;
+  layout_direction: string | null;
+  image_direction: string | null;
+  content_direction: string | null;
+  designer_guidance: string | null;
+  customer_explanation: string | null;
+};
+
+type ConceptPreviewRow = {
+  id: string;
+  design_request_id: string;
+  concept_direction_id: string;
+  image_public_url: string | null;
+  provider: string | null;
+  model: string | null;
+  prompt: string | null;
+  created_at: string | null;
+};
+
+type MatchEvidence = {
+  portfolio_item_id: string;
+  title: string;
+  evidence: string;
+  fit_reason: string;
+};
+
+type MatchContext = {
+  portfolio_fit_score: number;
+  style_fit_score: number;
+  vibe_fit_score: number;
+  industry_context_fit_score: number;
+  budget_fit_score: number;
+  not_same_style_but_same_vibe: boolean;
+  risk_flags: string[];
+  matched_portfolio_evidence: MatchEvidence[];
+};
+
+type BriefSummary = {
+  objective: string;
+  visualDirection: string;
+  keyMessage: string;
+  targetAudience: string;
+  deliverables: string[];
+  designerNotes: string;
+  completenessScore: number;
+  createdAt: string;
 };
 
 export default async function DesignerMatchesPage() {
@@ -153,14 +241,31 @@ export default async function DesignerMatchesPage() {
             `
             id,
             request_id,
+            design_request_id,
             objective,
             visual_direction,
             key_message,
             brief_completeness_score,
-            created_at
+            created_at,
+            brief_json,
+            customer_edited_brief_json,
+            final_brief_json,
+            project_title,
+            business_context,
+            design_objective,
+            target_audience,
+            deliverables,
+            content_requirements,
+            technical_requirements,
+            references_to_collect,
+            designer_notes
           `,
           )
-          .in("request_id", requestIds)
+          .or(
+            `request_id.in.(${requestIds.join(
+              ",",
+            )}),design_request_id.in.(${requestIds.join(",")})`,
+          )
       : { data: [], error: null };
 
   const jobsResult =
@@ -184,9 +289,87 @@ export default async function DesignerMatchesPage() {
           .order("created_at", { ascending: false })
       : { data: [], error: null };
 
+  const aiMatchScoresResult =
+    requestIds.length > 0
+      ? await adminSupabase
+          .from("ai_designer_match_scores")
+          .select(
+            `
+            request_id,
+            designer_id,
+            portfolio_fit_score,
+            style_fit_score,
+            vibe_fit_score,
+            industry_context_fit_score,
+            budget_fit_score,
+            not_same_style_but_same_vibe,
+            risk_flags,
+            matched_portfolio_evidence,
+            analysis_json
+          `,
+          )
+          .eq("designer_id", designerProfile.id)
+          .in("request_id", requestIds)
+      : { data: [], error: null };
+
+  const selectedConceptsResult =
+    requestIds.length > 0
+      ? await adminSupabase
+          .from("ai_concept_directions")
+          .select(
+            `
+            id,
+            design_request_id,
+            concept_name,
+            concept_summary,
+            strategic_role,
+            mood_tags,
+            style_tags,
+            color_palette,
+            typography_direction,
+            layout_direction,
+            image_direction,
+            content_direction,
+            designer_guidance,
+            customer_explanation
+          `,
+          )
+          .in("design_request_id", requestIds)
+          .eq("is_selected", true)
+      : { data: [], error: null };
+
+  const selectedConcepts =
+    (selectedConceptsResult.data ?? []) as unknown as SelectedConceptRow[];
+
+  const selectedConceptIds = selectedConcepts.map((concept) => concept.id);
+
+  const conceptPreviewsResult =
+    selectedConceptIds.length > 0
+      ? await adminSupabase
+          .from("ai_concept_previews")
+          .select(
+            `
+            id,
+            design_request_id,
+            concept_direction_id,
+            image_public_url,
+            provider,
+            model,
+            prompt,
+            created_at
+          `,
+          )
+          .in("concept_direction_id", selectedConceptIds)
+          .order("created_at", { ascending: false })
+      : { data: [], error: null };
+
   const requests = (requestsResult.data ?? []) as unknown as RequestRow[];
   const briefs = (briefsResult.data ?? []) as unknown as AiBriefRow[];
   const jobs = (jobsResult.data ?? []) as unknown as JobRow[];
+  const aiMatchScores =
+    (aiMatchScoresResult.data ?? []) as unknown as AiDesignerMatchScoreRow[];
+  const conceptPreviews =
+    (conceptPreviewsResult.data ?? []) as unknown as ConceptPreviewRow[];
 
   const matchedRequests = requests.length;
   const convertedJobs = jobs.length;
@@ -218,10 +401,31 @@ export default async function DesignerMatchesPage() {
   const orderedRequests = requests
     .map((request) => {
       const match = matches.find((item) => item.request_id === request.id);
+      const brief = briefs.find(
+        (item) =>
+          item.request_id === request.id || item.design_request_id === request.id,
+      );
+      const job = jobs.find((item) => item.request_id === request.id);
+      const aiMatchContext =
+        aiMatchScores.find((item) => item.request_id === request.id) ?? null;
+      const selectedConcept =
+        selectedConcepts.find(
+          (concept) => concept.design_request_id === request.id,
+        ) ?? null;
+      const selectedPreview = selectedConcept
+        ? conceptPreviews.find(
+            (preview) => preview.concept_direction_id === selectedConcept.id,
+          ) ?? null
+        : null;
 
       return {
         request,
         match,
+        brief,
+        job,
+        aiMatchContext,
+        selectedConcept,
+        selectedPreview,
       };
     })
     .sort(
@@ -244,6 +448,9 @@ export default async function DesignerMatchesPage() {
           requestsResult.error?.message,
           briefsResult.error?.message,
           jobsResult.error?.message,
+          aiMatchScoresResult.error?.message,
+          selectedConceptsResult.error?.message,
+          conceptPreviewsResult.error?.message,
         ]}
       />
 
@@ -297,9 +504,10 @@ export default async function DesignerMatchesPage() {
               </p>
 
               <p className="mt-3 max-w-3xl text-sm font-medium leading-7 text-slate-600">
-                Điểm match được tính dựa trên trạng thái đã duyệt, portfolio,
-                ngành, hạng mục thiết kế, rating, job hoàn thành, thời gian phản
-                hồi, minimum budget và dữ liệu Style DNA của bạn.
+                Điểm match được tính dựa trên brief đã chốt, concept khách hàng
+                đã chọn, visual preview, portfolio, Style DNA, ngành, hạng mục,
+                rating, job hoàn thành, thời gian phản hồi và minimum budget của
+                bạn.
               </p>
 
               <div className="mt-5 flex flex-wrap gap-3">
@@ -337,7 +545,11 @@ export default async function DesignerMatchesPage() {
                 icon={<Award className="size-4" />}
                 label="Avg score"
                 value={`${averageMatchScore} điểm trung bình`}
-                tone={averageMatchScore > 0 && averageMatchScore < 60 ? "warning" : "normal"}
+                tone={
+                  averageMatchScore > 0 && averageMatchScore < 60
+                    ? "warning"
+                    : "normal"
+                }
               />
 
               <SignalBox
@@ -363,8 +575,9 @@ export default async function DesignerMatchesPage() {
               </h2>
 
               <p className="mt-3 max-w-2xl text-sm font-medium leading-7 text-slate-600">
-                Mỗi brief bên dưới cho biết bạn được match bao nhiêu điểm và vì
-                sao hệ thống đề xuất bạn cho customer.
+                Mỗi brief bên dưới cho biết bạn được match bao nhiêu điểm, hợp
+                với concept nào, visual preview ra sao và vì sao hệ thống đề
+                xuất bạn cho customer.
               </p>
             </div>
 
@@ -380,23 +593,28 @@ export default async function DesignerMatchesPage() {
             />
           ) : (
             <div className="mt-6 grid gap-5">
-              {orderedRequests.map(({ request, match }) => {
-                const brief = briefs.find(
-                  (item) => item.request_id === request.id,
-                );
-
-                const job = jobs.find((item) => item.request_id === request.id);
-
-                return (
+              {orderedRequests.map(
+                ({
+                  request,
+                  match,
+                  brief,
+                  job,
+                  aiMatchContext,
+                  selectedConcept,
+                  selectedPreview,
+                }) => (
                   <MatchedBriefCard
                     key={request.id}
                     request={request}
                     match={match}
                     brief={brief}
                     job={job}
+                    aiMatchContext={normalizeMatchContext(aiMatchContext)}
+                    selectedConcept={selectedConcept}
+                    selectedPreview={selectedPreview}
                   />
-                );
-              })}
+                ),
+              )}
             </div>
           )}
         </SurfaceCard>
@@ -410,16 +628,23 @@ function MatchedBriefCard({
   match,
   brief,
   job,
+  aiMatchContext,
+  selectedConcept,
+  selectedPreview,
 }: {
   request: RequestRow;
   match?: MatchRow;
   brief?: AiBriefRow;
   job?: JobRow;
+  aiMatchContext: MatchContext | null;
+  selectedConcept: SelectedConceptRow | null;
+  selectedPreview: ConceptPreviewRow | null;
 }) {
   const requestStatus = getRequestStatusView(request.status);
   const jobStatus = job ? getJobStatusView(job.status) : null;
   const matchScore = Number(match?.match_score ?? 0);
   const matchReasons = match?.match_reasons ?? [];
+  const briefSummary = brief ? normalizeBriefSummary(brief) : null;
 
   return (
     <div className="rounded-[1.35rem] border border-blue-100 bg-blue-50/65 p-5">
@@ -441,6 +666,16 @@ function MatchedBriefCard({
             ) : (
               <StatusPill tone="warning">Chưa có AI brief</StatusPill>
             )}
+
+            {selectedConcept ? (
+              <StatusPill tone="info">Có concept đã chọn</StatusPill>
+            ) : (
+              <StatusPill tone="warning">Chưa có concept</StatusPill>
+            )}
+
+            {selectedPreview ? (
+              <StatusPill tone="success">Có visual preview</StatusPill>
+            ) : null}
 
             {jobStatus ? (
               <StatusPill tone={jobStatus.tone}>{jobStatus.label}</StatusPill>
@@ -510,6 +745,15 @@ function MatchedBriefCard({
         />
       </div>
 
+      {selectedConcept ? (
+        <DesignerConceptContext
+          concept={selectedConcept}
+          preview={selectedPreview}
+        />
+      ) : null}
+
+      {aiMatchContext ? <AIFitBreakdown context={aiMatchContext} /> : null}
+
       <div className="mt-5 rounded-[1.2rem] border border-blue-100 bg-white p-5">
         <div className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-blue-600">
           <Sparkles className="size-4" />
@@ -536,7 +780,53 @@ function MatchedBriefCard({
         )}
       </div>
 
-      {brief ? (
+      {aiMatchContext?.matched_portfolio_evidence.length ? (
+        <div className="mt-5 rounded-[1.2rem] border border-emerald-100 bg-emerald-50/70 p-5">
+          <div className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-emerald-700">
+            <BriefcaseBusiness className="size-4" />
+            Portfolio evidence
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {aiMatchContext.matched_portfolio_evidence
+              .slice(0, 4)
+              .map((item) => (
+                <div
+                  key={`${item.portfolio_item_id}-${item.title}`}
+                  className="rounded-2xl bg-white p-4 ring-1 ring-emerald-100"
+                >
+                  <p className="text-sm font-extrabold text-[#061a3a]">
+                    {item.title || "Portfolio item"}
+                  </p>
+                  <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
+                    {item.fit_reason || item.evidence}
+                  </p>
+                </div>
+              ))}
+          </div>
+        </div>
+      ) : null}
+
+      {aiMatchContext?.risk_flags.length ? (
+        <div className="mt-5 rounded-[1.2rem] border border-amber-100 bg-amber-50 p-5">
+          <div className="text-sm font-black uppercase tracking-[0.18em] text-amber-700">
+            Rủi ro cần lưu ý trước khi nhận job
+          </div>
+
+          <ul className="mt-4 grid gap-2 md:grid-cols-2">
+            {aiMatchContext.risk_flags.slice(0, 6).map((risk) => (
+              <li
+                key={risk}
+                className="rounded-2xl bg-white p-3 text-sm font-medium leading-6 text-amber-900 ring-1 ring-amber-100"
+              >
+                • {risk}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {briefSummary ? (
         <div className="mt-5 rounded-[1.2rem] border border-blue-100 bg-white p-5">
           <div className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-blue-600">
             <Sparkles className="size-4" />
@@ -544,20 +834,49 @@ function MatchedBriefCard({
           </div>
 
           <div className="mt-4 grid gap-3 xl:grid-cols-2">
-            <BriefBlock label="Objective" value={brief.objective} />
+            <BriefBlock label="Objective" value={briefSummary.objective} />
 
             <BriefBlock
               label="Visual direction"
-              value={brief.visual_direction}
+              value={briefSummary.visualDirection}
+            />
+
+            <BriefBlock
+              label="Target audience"
+              value={briefSummary.targetAudience || request.target_audience || "Chưa rõ"}
+            />
+
+            <BriefBlock
+              label="Key message"
+              value={briefSummary.keyMessage || "Chưa có key message"}
             />
           </div>
 
-          {brief.key_message ? (
-            <BriefBlock label="Key message" value={brief.key_message} />
+          {briefSummary.deliverables.length > 0 ? (
+            <div className="mt-4">
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-blue-600">
+                Deliverables
+              </p>
+
+              <div className="mt-2 flex flex-wrap gap-2">
+                {briefSummary.deliverables.map((deliverable) => (
+                  <span
+                    key={deliverable}
+                    className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700"
+                  >
+                    {deliverable}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {briefSummary.designerNotes ? (
+            <BriefBlock label="Designer notes" value={briefSummary.designerNotes} />
           ) : null}
 
           <p className="mt-4 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-            {`Brief generated at ${formatDateVi(brief.created_at)}`}
+            {`Brief generated at ${formatDateVi(briefSummary.createdAt)}`}
           </p>
         </div>
       ) : null}
@@ -604,9 +923,160 @@ function MatchedBriefCard({
   );
 }
 
+function DesignerConceptContext({
+  concept,
+  preview,
+}: {
+  concept: SelectedConceptRow;
+  preview: ConceptPreviewRow | null;
+}) {
+  const colors = normalizeColorPalette(concept.color_palette);
+
+  return (
+    <div className="mt-5 rounded-[1.2rem] border border-blue-100 bg-white p-5">
+      <div className="grid gap-5 xl:grid-cols-[1fr_280px]">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusPill tone="info">Concept khách đã chọn</StatusPill>
+            {preview ? (
+              <StatusPill tone="success">Có visual preview</StatusPill>
+            ) : null}
+          </div>
+
+          <h4 className="mt-3 text-xl font-extrabold tracking-[-0.04em] text-[#061a3a]">
+            {concept.concept_name ?? "Concept đã chọn"}
+          </h4>
+
+          <p className="mt-2 text-sm font-medium leading-7 text-slate-600">
+            {concept.concept_summary ??
+              concept.customer_explanation ??
+              "Concept này là direction chính mà customer đã chọn trước khi matching."}
+          </p>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <InfoBox
+              icon={<Palette className="size-4" />}
+              label="Mood"
+              value={(concept.mood_tags ?? []).slice(0, 4).join(", ") || "Chưa rõ"}
+            />
+
+            <InfoBox
+              icon={<LayoutTemplate className="size-4" />}
+              label="Style"
+              value={(concept.style_tags ?? []).slice(0, 4).join(", ") || "Chưa rõ"}
+            />
+
+            <InfoBox
+              icon={<ImageIcon className="size-4" />}
+              label="Image direction"
+              value={concept.image_direction ?? "Chưa rõ"}
+            />
+          </div>
+
+          {concept.designer_guidance ? (
+            <BriefBlock label="Guidance cho designer" value={concept.designer_guidance} />
+          ) : null}
+
+          {colors.length > 0 ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {colors.slice(0, 6).map((color) => (
+                <div
+                  key={`${color.name}-${color.hex_guess ?? color.role}`}
+                  className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-bold text-slate-700"
+                >
+                  <span
+                    className="size-4 rounded-full border border-white shadow-sm"
+                    style={{
+                      backgroundColor: color.hex_guess ?? "#E5E7EB",
+                    }}
+                  />
+                  {color.name}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        {preview?.image_public_url ? (
+          <div className="overflow-hidden rounded-[1.15rem] border border-blue-100 bg-blue-50">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={preview.image_public_url}
+              alt={`Visual concept preview for ${concept.concept_name ?? "selected concept"}`}
+              className="aspect-square w-full object-cover"
+            />
+          </div>
+        ) : (
+          <div className="grid min-h-48 place-items-center rounded-[1.15rem] border border-dashed border-blue-200 bg-blue-50 p-5 text-center">
+            <div>
+              <ImageIcon className="mx-auto size-7 text-blue-600" />
+              <p className="mt-3 text-sm font-bold text-slate-700">
+                Chưa có ảnh preview
+              </p>
+              <p className="mt-1 text-xs font-medium leading-6 text-slate-500">
+                Customer chưa tạo visual preview cho concept này.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AIFitBreakdown({ context }: { context: MatchContext }) {
+  return (
+    <div className="mt-5 rounded-[1.2rem] border border-slate-200 bg-slate-50 p-5">
+      <div className="text-sm font-black uppercase tracking-[0.18em] text-slate-500">
+        AI fit breakdown
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <ScoreLine label="Portfolio fit" value={context.portfolio_fit_score} />
+        <ScoreLine label="Style fit" value={context.style_fit_score} />
+        <ScoreLine label="Vibe fit" value={context.vibe_fit_score} />
+        <ScoreLine
+          label="Industry context"
+          value={context.industry_context_fit_score}
+        />
+        <ScoreLine label="Budget fit" value={context.budget_fit_score} />
+      </div>
+
+      {context.not_same_style_but_same_vibe ? (
+        <div className="mt-4 rounded-2xl bg-white p-4 text-sm font-semibold leading-6 text-blue-700 ring-1 ring-blue-100">
+          Bạn không nhất thiết trùng style trực tiếp với brief, nhưng có cùng
+          vibe thị giác với concept mà customer đã chọn.
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ScoreLine({ label, value }: { label: string; value: number }) {
+  const safeValue = clampScore(value);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+        <span>{label}</span>
+        <span>{safeValue}/100</span>
+      </div>
+
+      <div className="mt-1 h-2 overflow-hidden rounded-full bg-white">
+        <div
+          className="h-full rounded-full bg-blue-600"
+          style={{
+            width: `${safeValue}%`,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function BriefBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-blue-100 bg-blue-50/65 p-4">
+    <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/65 p-4">
       <p className="text-xs font-black uppercase tracking-[0.18em] text-blue-600">
         {label}
       </p>
@@ -808,6 +1278,164 @@ function EmptyState({
       </Button>
     </div>
   );
+}
+
+function normalizeBriefSummary(brief: AiBriefRow): BriefSummary {
+  const finalBriefJson = asRecord(brief.final_brief_json);
+  const customerEditedBriefJson = asRecord(brief.customer_edited_brief_json);
+  const originalBriefJson = asRecord(brief.brief_json);
+
+  const source =
+    Object.keys(finalBriefJson).length > 0
+      ? finalBriefJson
+      : Object.keys(customerEditedBriefJson).length > 0
+        ? customerEditedBriefJson
+        : originalBriefJson;
+
+  const visualDirection = asRecord(source.visual_direction);
+
+  const mood = asArray(visualDirection.mood);
+  const styleTags = asArray(visualDirection.style_tags);
+  const colorDirection = asArray(visualDirection.color_direction);
+
+  const visualDirectionText =
+    [
+      mood.length > 0 ? `Mood: ${mood.join(", ")}` : "",
+      styleTags.length > 0 ? `Style: ${styleTags.join(", ")}` : "",
+      colorDirection.length > 0 ? `Màu sắc: ${colorDirection.join(", ")}` : "",
+      stringValue(visualDirection.typography_direction)
+        ? `Typography: ${stringValue(visualDirection.typography_direction)}`
+        : "",
+      stringValue(visualDirection.layout_direction)
+        ? `Layout: ${stringValue(visualDirection.layout_direction)}`
+        : "",
+      stringValue(visualDirection.image_direction)
+        ? `Hình ảnh: ${stringValue(visualDirection.image_direction)}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n") ||
+    stringValue(source.visual_direction ?? brief.visual_direction) ||
+    "Chưa có visual direction.";
+
+  return {
+    objective:
+      stringValue(source.design_objective ?? brief.design_objective) ||
+      stringValue(source.objective ?? brief.objective) ||
+      "Chưa có objective.",
+    visualDirection: visualDirectionText,
+    keyMessage:
+      stringValue(source.key_message ?? brief.key_message) ||
+      "Chưa có key message.",
+    targetAudience:
+      stringValue(source.target_audience ?? brief.target_audience) ||
+      "Chưa rõ.",
+    deliverables: asArray(source.deliverables ?? brief.deliverables),
+    designerNotes: stringValue(source.designer_notes ?? brief.designer_notes),
+    completenessScore: Number(brief.brief_completeness_score ?? 0),
+    createdAt: brief.created_at,
+  };
+}
+
+function normalizeMatchContext(row: AiDesignerMatchScoreRow | null) {
+  if (!row) {
+    return null;
+  }
+
+  const analysisJson = asRecord(row.analysis_json);
+
+  return {
+    portfolio_fit_score: Number(row.portfolio_fit_score ?? 0),
+    style_fit_score: Number(row.style_fit_score ?? 0),
+    vibe_fit_score: Number(row.vibe_fit_score ?? 0),
+    industry_context_fit_score: Number(row.industry_context_fit_score ?? 0),
+    budget_fit_score: Number(row.budget_fit_score ?? 0),
+    not_same_style_but_same_vibe: Boolean(row.not_same_style_but_same_vibe),
+    risk_flags:
+      row.risk_flags ?? asArray(analysisJson.risk_flags).slice(0, 8),
+    matched_portfolio_evidence: normalizePortfolioEvidence(
+      row.matched_portfolio_evidence ??
+        analysisJson.matched_portfolio_evidence,
+    ),
+  } satisfies MatchContext;
+}
+
+function normalizePortfolioEvidence(value: unknown): MatchEvidence[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      const record = asRecord(item);
+
+      return {
+        portfolio_item_id: stringValue(record.portfolio_item_id),
+        title: stringValue(record.title),
+        evidence: stringValue(record.evidence),
+        fit_reason: stringValue(record.fit_reason),
+      };
+    })
+    .filter((item) => item.portfolio_item_id || item.title)
+    .slice(0, 4);
+}
+
+function normalizeColorPalette(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      const record = asRecord(item);
+
+      return {
+        name: stringValue(record.name) || "Không xác định",
+        hex_guess:
+          typeof record.hex_guess === "string" &&
+          /^#[0-9a-fA-F]{6}$/.test(record.hex_guess.trim())
+            ? record.hex_guess.trim().toUpperCase()
+            : null,
+        role: stringValue(record.role) || "supporting",
+      };
+    })
+    .filter((item) => item.name);
+}
+
+function asRecord(value: unknown): JsonRecord {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return value as JsonRecord;
+}
+
+function asArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((item) => stringValue(item)).filter(Boolean);
+}
+
+function stringValue(value: unknown) {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  return String(value).trim();
+}
+
+function clampScore(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.min(100, Math.max(0, Math.round(value)));
 }
 
 function getScoreView(score: number) {

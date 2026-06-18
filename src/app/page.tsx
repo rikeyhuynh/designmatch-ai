@@ -3,15 +3,21 @@ import Link from "next/link";
 import {
   ArrowRight,
   BadgeCheck,
+  Banknote,
   Bot,
   BriefcaseBusiness,
   CheckCircle2,
   CircleDollarSign,
+  Clock3,
   FileText,
   GalleryVerticalEnd,
+  Layers3,
+  MessageSquareText,
   Palette,
   ShieldCheck,
   Sparkles,
+  Star,
+  Store,
   Target,
   UploadCloud,
   Users,
@@ -26,48 +32,72 @@ import { Button } from "@/components/ui/button";
 const workflowItems = [
   {
     icon: UploadCloud,
-    title: "Gửi sản phẩm",
+    title: "Gửi nhu cầu",
     description:
-      "Khách hàng tải ảnh sản phẩm, logo, mô tả nhu cầu, ngân sách và deadline.",
+      "Khách hàng nhập ngành hàng, mục tiêu truyền thông, ngân sách, deadline và ảnh tham khảo.",
   },
   {
     icon: WandSparkles,
-    title: "AI tạo brief",
+    title: "AI dựng brief",
     description:
-      "AI chuyển mô tả mơ hồ thành brief có mục tiêu, mood, layout, CTA và rủi ro.",
+      "AI biến nhu cầu mơ hồ thành brief có mục tiêu, thông điệp, mood, layout và yêu cầu kỹ thuật.",
   },
   {
     icon: Palette,
-    title: "Chọn concept",
+    title: "Xem concept",
     description:
-      "Khách xem các hướng concept trực quan trước khi gửi cho designer.",
+      "Khách hàng xem các hướng concept trước để thống nhất gu thẩm mỹ trước khi làm việc.",
   },
   {
     icon: Users,
     title: "Match designer",
     description:
-      "Hệ thống gợi ý designer theo style, ngành hàng, taste gap, ngân sách và deadline.",
+      "Hệ thống gợi ý designer dựa trên Style DNA, portfolio, ngành hàng, ngân sách và vibe phù hợp.",
   },
 ];
 
-const trustItems = [
+const problemItems = [
   {
-    icon: Target,
-    title: "Brief rõ trước khi bắt đầu",
+    title: "Khách hàng không biết viết brief",
     description:
-      "Giảm tình trạng khách nói “làm đẹp hơn”, designer phải tự đoán ý.",
+      "Hộ kinh doanh nhỏ thường chỉ nói “làm đẹp hơn”, “sang hơn”, “trẻ hơn” nhưng không diễn đạt được thành yêu cầu thiết kế rõ ràng.",
+  },
+  {
+    title: "Designer phải đoán ý",
+    description:
+      "Designer mất thời gian hỏi lại, sửa nhiều vòng, nhưng vẫn có nguy cơ lệch gu vì brief ban đầu thiếu thông tin.",
+  },
+  {
+    title: "Chọn designer chủ yếu theo cảm tính",
+    description:
+      "Khách hàng nhìn vài ảnh portfolio rồi chọn, nhưng không biết designer có thật sự hợp ngành hàng, phong cách và ngân sách hay không.",
+  },
+];
+
+const solutionItems = [
+  {
+    icon: FileText,
+    title: "AI Brief Builder",
+    description:
+      "Chuẩn hóa nhu cầu thành brief có thể triển khai: mục tiêu, audience, key message, deliverables, layout, mood và technical requirements.",
+  },
+  {
+    icon: Sparkles,
+    title: "AI Concept Direction",
+    description:
+      "Gợi ý nhiều hướng concept giúp khách hàng hình dung gu thiết kế trước khi bắt đầu job.",
   },
   {
     icon: BadgeCheck,
-    title: "Match có lý do",
+    title: "Designer Style DNA",
     description:
-      "Mỗi designer được đề xuất kèm match score, taste gap và portfolio liên quan.",
+      "Phân tích portfolio để hiểu designer mạnh ở phong cách nào, ngành nào, màu sắc, typography và bố cục nào.",
   },
   {
-    icon: ShieldCheck,
-    title: "Có lớp vận hành thật",
+    icon: Target,
+    title: "AI Matching Score",
     description:
-      "Admin có thể duyệt designer, xác nhận thanh toán và theo dõi trạng thái job.",
+      "Chấm điểm phù hợp giữa brief và designer theo style fit, vibe fit, portfolio fit, industry fit và budget fit.",
   },
 ];
 
@@ -82,13 +112,29 @@ const aiModules = [
   "Feedback Assistant",
 ];
 
+const customerBenefits = [
+  "Có brief rõ trước khi trả tiền",
+  "Hiểu mình cần thiết kế gì",
+  "Xem hướng concept trước khi chọn designer",
+  "Biết vì sao designer được đề xuất",
+  "Theo dõi payment, update, feedback và review trong một workspace",
+];
+
+const designerBenefits = [
+  "Được chọn vì đúng phong cách, không chỉ vì giá rẻ",
+  "Portfolio được AI phân tích thành Style DNA",
+  "Nhận brief rõ hơn, giảm sửa sai",
+  "Có job workspace để gửi draft, final và nhận feedback",
+  "Xây dựng uy tín qua rating, completed jobs và portfolio evidence",
+];
+
 const designerMatches = [
   {
     name: "Linh Studio",
     focus: "F&B pastel · Korean cafe",
     score: "92%",
     gap: "18%",
-    note: "Có 8 portfolio gần concept khách chọn",
+    note: "Có nhiều portfolio gần concept khách chọn",
   },
   {
     name: "Mộc Design",
@@ -106,12 +152,58 @@ const designerMatches = [
   },
 ];
 
+const operationItems = [
+  {
+    icon: BriefcaseBusiness,
+    title: "Customer flow",
+    description:
+      "Tạo request, duyệt brief, nhận match, chọn designer, thanh toán và hoàn tất job.",
+  },
+  {
+    icon: GalleryVerticalEnd,
+    title: "Designer flow",
+    description:
+      "Upload portfolio, tạo Style DNA, nhận job, gửi update, nhận feedback và bàn giao final.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Admin operation",
+    description:
+      "Duyệt designer, xác nhận payment, theo dõi request, job, review và pipeline vận hành.",
+  },
+];
+
+const feeRows = [
+  {
+    range: "Dưới 500.000đ",
+    fee: "15%",
+    note: "Phù hợp job nhỏ, social post, banner đơn giản",
+  },
+  {
+    range: "500.000đ - dưới 2.000.000đ",
+    fee: "13%",
+    note: "Phù hợp gói thiết kế phổ biến cho hộ kinh doanh",
+  },
+  {
+    range: "2.000.000đ - dưới 5.000.000đ",
+    fee: "12%",
+    note: "Phù hợp bộ ấn phẩm hoặc campaign nhỏ",
+  },
+  {
+    range: "Từ 5.000.000đ",
+    fee: "10%",
+    note: "Phù hợp dự án lớn hơn, có thể mở rộng team booking",
+  },
+];
+
 export default function HomePage() {
   return (
     <SiteShell>
       <main>
         <section className="business-blue-bg relative isolate overflow-hidden border-b border-blue-100">
           <div className="subtle-grid absolute inset-0 -z-10 opacity-70" />
+          <div className="absolute left-1/2 top-10 -z-10 size-[520px] -translate-x-1/2 rounded-full bg-blue-300/20 blur-3xl" />
+          <div className="absolute -right-24 bottom-16 -z-10 size-[420px] rounded-full bg-sky-300/20 blur-3xl" />
 
           <div className="mx-auto grid min-h-[calc(100svh-76px)] w-full max-w-7xl gap-10 px-5 py-10 md:px-8 md:py-12 lg:grid-cols-[0.95fr_1.05fr] lg:items-center lg:py-14">
             <div className="max-w-3xl">
@@ -119,15 +211,15 @@ export default function HomePage() {
                 AI Creative Matching cho hộ kinh doanh nhỏ
               </Badge>
 
-              <h1 className="mt-6 max-w-3xl text-4xl font-extrabold leading-[1.05] tracking-[-0.055em] text-[#061a3a] md:text-5xl xl:text-[4.15rem]">
-                Tạo brief rõ ràng. Chọn đúng gu. Gặp đúng designer.
+              <h1 className="mt-6 max-w-3xl text-4xl font-extrabold leading-[1.05] tracking-[-0.055em] text-[#061a3a] md:text-5xl xl:text-[4.25rem]">
+                Đúng brief. Đúng gu. Đúng designer.
               </h1>
 
               <p className="mt-6 max-w-2xl text-base font-medium leading-8 text-slate-600 md:text-lg">
-                DesignMatch AI giúp khách hàng không chuyên thiết kế biến nhu
-                cầu mơ hồ thành brief có thể triển khai, xem trước concept trực
-                quan và kết nối với designer phù hợp theo phong cách thị giác,
-                ngân sách và ngành hàng.
+                DesignMatch AI giúp hộ kinh doanh nhỏ biến nhu cầu thiết kế mơ
+                hồ thành brief rõ ràng, xem trước concept trực quan và kết nối
+                với designer phù hợp theo phong cách thị giác, ngành hàng, ngân
+                sách và mục tiêu truyền thông.
               </p>
 
               <div className="mt-7 flex flex-col gap-3 sm:flex-row">
@@ -136,8 +228,8 @@ export default function HomePage() {
                   size="lg"
                   className="h-12 rounded-full bg-[#061a3a] px-7 text-base font-extrabold text-white shadow-[0_18px_45px_rgba(6,26,58,0.24)] hover:bg-[#0b2a61]"
                 >
-                  <Link href="#customer">
-                    Tạo brief miễn phí
+                  <Link href="/customer/requests/new">
+                    Tạo request thiết kế
                     <ArrowRight className="ml-2 size-4" aria-hidden="true" />
                   </Link>
                 </Button>
@@ -148,14 +240,14 @@ export default function HomePage() {
                   variant="outline"
                   className="h-12 rounded-full border-blue-200 bg-white/82 px-7 text-base font-extrabold text-blue-900 shadow-sm hover:bg-blue-50"
                 >
-                  <Link href="#designer">Tôi là designer</Link>
+                  <Link href="/designer/portfolio">Tôi là designer</Link>
                 </Button>
               </div>
 
               <TrustStrip />
 
               <div className="mt-5 grid max-w-2xl grid-cols-3 gap-3">
-                <MetricCard value="4" label="role vận hành" />
+                <MetricCard value="4" label="vai trò vận hành" />
                 <MetricCard value="8+" label="AI module MVP" />
                 <MetricCard value="100" label="điểm matching" />
               </div>
@@ -165,11 +257,58 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="mx-auto w-full max-w-7xl px-5 py-10 md:px-8">
+        <section className="mx-auto w-full max-w-7xl px-5 py-12 md:px-8">
           <div className="grid gap-4 md:grid-cols-3">
-            {trustItems.map((item) => (
-              <TrustCard key={item.title} {...item} />
+            <TrustCard
+              icon={FileText}
+              title="Brief rõ trước khi bắt đầu"
+              description="Giảm tình trạng khách nói “làm đẹp hơn”, designer phải tự đoán ý và sửa nhiều vòng."
+            />
+            <TrustCard
+              icon={BadgeCheck}
+              title="Matching có bằng chứng"
+              description="Mỗi designer được đề xuất kèm match score, lý do phù hợp và portfolio evidence."
+            />
+            <TrustCard
+              icon={ShieldCheck}
+              title="Có vận hành marketplace"
+              description="Admin có thể duyệt designer, xác nhận thanh toán, theo dõi job và kiểm soát chất lượng."
+            />
+          </div>
+        </section>
+
+        <section className="mx-auto w-full max-w-7xl px-5 py-14 md:px-8">
+          <SectionHeader
+            eyebrow="Vấn đề thị trường"
+            title="Không phải khách hàng không cần thiết kế đẹp, mà họ không biết bắt đầu từ đâu."
+            description="Phần lớn hộ kinh doanh nhỏ chưa có năng lực viết brief, đánh giá portfolio hoặc chọn designer theo tiêu chí chuyên môn."
+          />
+
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {problemItems.map((item, index) => (
+              <ProblemCard
+                key={item.title}
+                index={`0${index + 1}`}
+                title={item.title}
+                description={item.description}
+              />
             ))}
+          </div>
+        </section>
+
+        <section className="mx-auto w-full max-w-7xl px-5 py-14 md:px-8">
+          <div className="rounded-[1.75rem] border border-blue-100 bg-white p-6 shadow-[0_24px_90px_rgba(15,65,145,0.1)] md:p-8">
+            <SectionHeader
+              eyebrow="Giải pháp"
+              title="DesignMatch AI không thay designer, mà làm rõ brief và chọn đúng designer hơn."
+              description="AI xử lý phần mơ hồ: hiểu nhu cầu, chuẩn hóa brief, phân tích portfolio, đo độ phù hợp và giải thích vì sao designer được match."
+            />
+
+            <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {solutionItems.map((item) => (
+                <SolutionCard key={item.title} {...item} />
+              ))}
+            </div>
           </div>
         </section>
 
@@ -180,7 +319,7 @@ export default function HomePage() {
           <SectionHeader
             eyebrow="Workflow sản phẩm"
             title="Một quy trình đủ rõ để dùng thật, không phải match ngẫu nhiên."
-            description="Mỗi bước đều tạo dữ liệu cho brief, concept, matching, proposal, job management và admin operation."
+            description="Mỗi bước tạo dữ liệu cho brief, concept, matching, job management và admin operation."
           />
 
           <div className="mt-8 grid gap-4 md:grid-cols-4">
@@ -203,43 +342,17 @@ export default function HomePage() {
               <SectionHeader
                 eyebrow="Dành cho khách hàng"
                 title="Không cần biết viết brief, vẫn có thể bắt đầu đúng."
-                description="Khách hàng nhỏ thường biết mình muốn đẹp hơn, nhưng không biết diễn đạt bằng ngôn ngữ thiết kế. AI giúp chuyển nhu cầu đó thành brief rõ ràng trước khi gửi cho designer."
+                description="Khách hàng chỉ cần nói nhu cầu bằng ngôn ngữ đời thường. AI giúp chuyển thành brief rõ, có thể gửi designer và quản lý job sau đó."
               />
 
-              <div className="mt-7 flex flex-wrap gap-3">
-                {aiModules.slice(0, 4).map((module) => (
-                  <FeaturePill key={module}>{module}</FeaturePill>
+              <div className="mt-7 grid gap-3">
+                {customerBenefits.map((item) => (
+                  <BenefitItem key={item}>{item}</BenefitItem>
                 ))}
               </div>
             </div>
 
-            <div className="rounded-[1.75rem] border border-blue-100 bg-white p-6 shadow-[0_24px_90px_rgba(15,65,145,0.11)]">
-              <p className="text-sm font-black uppercase tracking-[0.22em] text-blue-600">
-                Before / After Brief
-              </p>
-
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
-                <div className="rounded-[1.35rem] border border-slate-200 bg-slate-50 p-5">
-                  <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">
-                    Trước AI
-                  </p>
-                  <p className="mt-4 text-xl font-extrabold tracking-[-0.04em] text-slate-900">
-                    “Làm poster khai trương cho đẹp, trẻ trung, nhìn sang hơn.”
-                  </p>
-                </div>
-
-                <div className="rounded-[1.35rem] border border-blue-100 bg-blue-50/70 p-5">
-                  <p className="text-xs font-black uppercase tracking-[0.2em] text-blue-500">
-                    Sau AI
-                  </p>
-                  <p className="mt-4 text-base font-bold leading-7 text-[#061a3a]">
-                    Poster khai trương 1:1 cho quán trà sữa, mood Korean cafe,
-                    tone nâu kem, headline rõ, CTA ưu đãi khai trương, phù hợp
-                    sinh viên và cần designer mạnh F&B pastel.
-                  </p>
-                </div>
-              </div>
-            </div>
+            <BeforeAfterBrief />
           </div>
         </section>
 
@@ -255,64 +368,62 @@ export default function HomePage() {
                 description="Portfolio được biến thành Style DNA, giúp khách hàng hiểu designer mạnh ở ngành nào, gu nào, loại thiết kế nào và vì sao phù hợp với brief."
               />
 
-              <div className="mt-7 flex flex-wrap gap-3">
-                {aiModules.slice(4).map((module) => (
-                  <FeaturePill key={module}>{module}</FeaturePill>
+              <div className="mt-7 grid gap-3">
+                {designerBenefits.map((item) => (
+                  <BenefitItem key={item}>{item}</BenefitItem>
                 ))}
               </div>
             </div>
 
-            <div className="rounded-[1.75rem] border border-blue-100 bg-white p-5 shadow-[0_24px_90px_rgba(15,65,145,0.11)]">
-              <div className="mb-5 flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-sm font-black uppercase tracking-[0.22em] text-blue-600">
-                    Match result
-                  </p>
-                  <h3 className="mt-2 text-2xl font-extrabold tracking-[-0.045em] text-[#061a3a]">
-                    Designer phù hợp với brief này
-                  </h3>
-                </div>
+            <DesignerMatchPreview />
+          </div>
+        </section>
 
-                <div className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-700 ring-1 ring-emerald-100">
-                  5 đề xuất
+        <section className="mx-auto w-full max-w-7xl px-5 py-14 md:px-8">
+          <SectionHeader
+            eyebrow="AI modules"
+            title="Hệ thống AI được chia thành nhiều module nhỏ, phục vụ từng điểm trong workflow."
+            description="Không chỉ tạo text, DesignMatch AI dùng AI để hiểu visual need, tạo brief, đánh giá rủi ro, phân tích Style DNA và giải thích matching."
+          />
+
+          <div className="mt-8 grid gap-3 md:grid-cols-4">
+            {aiModules.map((module, index) => (
+              <ModuleCard key={module} index={index + 1} title={module} />
+            ))}
+          </div>
+        </section>
+
+        <section className="mx-auto w-full max-w-7xl px-5 py-14 md:px-8">
+          <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr] lg:items-start">
+            <div>
+              <SectionHeader
+                eyebrow="Mô hình doanh thu"
+                title="Platform fee theo giá trị job, minh bạch cho cả khách hàng và designer."
+                description="DesignMatch AI đi theo mô hình marketplace: customer trả theo job, designer nhận doanh thu sau khi trừ phí nền tảng."
+              />
+
+              <div className="mt-7 rounded-[1.35rem] border border-blue-100 bg-blue-50/70 p-5">
+                <div className="flex items-start gap-3">
+                  <div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-white text-blue-700 ring-1 ring-blue-100">
+                    <Banknote className="size-5" />
+                  </div>
+                  <div>
+                    <p className="font-extrabold tracking-[-0.025em] text-[#061a3a]">
+                      Manual-first payment
+                    </p>
+                    <p className="mt-2 text-sm font-medium leading-7 text-slate-600">
+                      MVP ưu tiên chuyển khoản thủ công để dễ triển khai, admin
+                      xác nhận payment trước khi job được mở cho designer.
+                    </p>
+                  </div>
                 </div>
               </div>
+            </div>
 
-              <div className="space-y-3">
-                {designerMatches.map((designer, index) => (
-                  <div
-                    key={designer.name}
-                    className="rounded-[1.25rem] border border-blue-100 bg-gradient-to-r from-white to-blue-50/70 p-4"
-                  >
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-4">
-                        <div className="grid size-11 place-items-center rounded-2xl bg-[#061a3a] text-sm font-black text-white">
-                          {index + 1}
-                        </div>
-
-                        <div>
-                          <p className="font-extrabold tracking-[-0.025em] text-[#061a3a]">
-                            {designer.name}
-                          </p>
-                          <p className="mt-1 text-sm font-semibold text-slate-600">
-                            {designer.focus}
-                          </p>
-                          <p className="mt-2 text-xs font-medium text-slate-500">
-                            {designer.note}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="shrink-0 text-right">
-                        <p className="text-2xl font-black tracking-[-0.05em] text-blue-700">
-                          {designer.score}
-                        </p>
-                        <p className="text-xs font-bold text-slate-500">
-                          Taste gap {designer.gap}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+            <div className="rounded-[1.75rem] border border-blue-100 bg-white p-5 shadow-[0_24px_90px_rgba(15,65,145,0.1)]">
+              <div className="grid gap-3">
+                {feeRows.map((row) => (
+                  <FeeRow key={row.range} {...row} />
                 ))}
               </div>
             </div>
@@ -321,24 +432,57 @@ export default function HomePage() {
 
         <section
           id="operation"
-          className="scroll-mt-24 mx-auto w-full max-w-7xl px-5 py-14 pb-24 md:px-8"
+          className="scroll-mt-24 mx-auto w-full max-w-7xl px-5 py-14 md:px-8"
         >
           <div className="grid gap-5 rounded-[1.75rem] border border-blue-900/20 bg-[#061a3a] p-6 shadow-[0_34px_100px_rgba(6,26,58,0.22)] md:grid-cols-3 md:p-8">
-            <OperationItem
-              icon={BriefcaseBusiness}
-              title="Customer flow"
-              description="Tạo request, nhận brief AI, chọn concept, gửi brief, thanh toán và hoàn tất job."
-            />
-            <OperationItem
-              icon={GalleryVerticalEnd}
-              title="Designer flow"
-              description="Upload portfolio, tạo Style DNA, nhận brief, gửi proposal và bàn giao file."
-            />
-            <OperationItem
-              icon={CircleDollarSign}
-              title="Admin operation"
-              description="Duyệt designer, xác nhận chuyển khoản, theo dõi job, payout và report."
-            />
+            {operationItems.map((item) => (
+              <OperationItem key={item.title} {...item} />
+            ))}
+          </div>
+        </section>
+
+        <section className="mx-auto w-full max-w-7xl px-5 pb-24 pt-8 md:px-8">
+          <div className="overflow-hidden rounded-[2rem] border border-blue-100 bg-white shadow-[0_24px_90px_rgba(15,65,145,0.1)]">
+            <div className="grid gap-6 p-6 md:p-8 lg:grid-cols-[1fr_0.8fr] lg:items-center">
+              <div>
+                <Badge className="rounded-full border border-blue-200 bg-blue-50 px-4 py-2 font-extrabold text-blue-800 hover:bg-blue-50">
+                  Ready for MVP demo
+                </Badge>
+
+                <h2 className="mt-5 text-3xl font-extrabold tracking-[-0.055em] text-[#061a3a] md:text-4xl">
+                  Bắt đầu từ một brief rõ ràng, kết thúc bằng một job có thể
+                  quản lý.
+                </h2>
+
+                <p className="mt-4 max-w-2xl text-base font-medium leading-8 text-slate-600">
+                  DesignMatch AI kết nối customer, designer và admin trong cùng
+                  một quy trình: brief, matching, payment, update, feedback,
+                  completion và review.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row lg:justify-end">
+                <Button
+                  asChild
+                  size="lg"
+                  className="h-12 rounded-full bg-[#061a3a] px-7 text-base font-extrabold text-white hover:bg-[#0b2a61]"
+                >
+                  <Link href="/customer/requests/new">
+                    Tạo request ngay
+                    <ArrowRight className="ml-2 size-4" />
+                  </Link>
+                </Button>
+
+                <Button
+                  asChild
+                  size="lg"
+                  variant="outline"
+                  className="h-12 rounded-full border-blue-200 bg-white px-7 text-base font-extrabold text-blue-900 hover:bg-blue-50"
+                >
+                  <Link href="/designer/portfolio">Upload portfolio</Link>
+                </Button>
+              </div>
+            </div>
           </div>
         </section>
       </main>
@@ -428,7 +572,9 @@ function ProductPreview() {
           <div className="space-y-4">
             <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-black text-white">Selected concept</p>
+                <p className="text-sm font-black text-white">
+                  Selected concept
+                </p>
                 <span className="text-xs font-bold text-sky-200/70">01</span>
               </div>
 
@@ -570,6 +716,52 @@ function TrustCard({
   );
 }
 
+function ProblemCard({
+  index,
+  title,
+  description,
+}: {
+  index: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="rounded-[1.5rem] border border-amber-100 bg-amber-50/60 p-6">
+      <p className="text-sm font-black text-amber-500">{index}</p>
+      <h3 className="mt-4 text-xl font-extrabold tracking-[-0.04em] text-[#061a3a]">
+        {title}
+      </h3>
+      <p className="mt-3 text-sm font-medium leading-7 text-slate-600">
+        {description}
+      </p>
+    </div>
+  );
+}
+
+function SolutionCard({
+  icon: Icon,
+  title,
+  description,
+}: {
+  icon: LucideIcon;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="rounded-[1.35rem] border border-blue-100 bg-blue-50/60 p-5">
+      <div className="grid size-11 place-items-center rounded-2xl bg-white text-blue-700 ring-1 ring-blue-100">
+        <Icon className="size-5" />
+      </div>
+      <h3 className="mt-5 text-lg font-extrabold tracking-[-0.035em] text-[#061a3a]">
+        {title}
+      </h3>
+      <p className="mt-2 text-sm font-medium leading-7 text-slate-600">
+        {description}
+      </p>
+    </div>
+  );
+}
+
 function SectionHeader({
   eyebrow,
   title,
@@ -619,6 +811,144 @@ function WorkflowCard({
       </h3>
       <p className="mt-3 text-sm font-medium leading-7 text-slate-600">
         {description}
+      </p>
+    </div>
+  );
+}
+
+function BeforeAfterBrief() {
+  return (
+    <div className="rounded-[1.75rem] border border-blue-100 bg-white p-6 shadow-[0_24px_90px_rgba(15,65,145,0.11)]">
+      <p className="text-sm font-black uppercase tracking-[0.22em] text-blue-600">
+        Before / After Brief
+      </p>
+
+      <div className="mt-5 grid gap-4 md:grid-cols-2">
+        <div className="rounded-[1.35rem] border border-slate-200 bg-slate-50 p-5">
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">
+            Trước AI
+          </p>
+          <p className="mt-4 text-xl font-extrabold tracking-[-0.04em] text-slate-900">
+            “Làm poster khai trương cho đẹp, trẻ trung, nhìn sang hơn.”
+          </p>
+        </div>
+
+        <div className="rounded-[1.35rem] border border-blue-100 bg-blue-50/70 p-5">
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-blue-500">
+            Sau AI
+          </p>
+          <p className="mt-4 text-base font-bold leading-7 text-[#061a3a]">
+            Poster khai trương 1:1 cho quán trà sữa, mood Korean cafe, tone nâu
+            kem, headline rõ, CTA ưu đãi khai trương, phù hợp sinh viên và cần
+            designer mạnh F&B pastel.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DesignerMatchPreview() {
+  return (
+    <div className="rounded-[1.75rem] border border-blue-100 bg-white p-5 shadow-[0_24px_90px_rgba(15,65,145,0.11)]">
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-black uppercase tracking-[0.22em] text-blue-600">
+            Match result
+          </p>
+          <h3 className="mt-2 text-2xl font-extrabold tracking-[-0.045em] text-[#061a3a]">
+            Designer phù hợp với brief này
+          </h3>
+        </div>
+
+        <div className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-700 ring-1 ring-emerald-100">
+          5 đề xuất
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {designerMatches.map((designer, index) => (
+          <div
+            key={designer.name}
+            className="rounded-[1.25rem] border border-blue-100 bg-gradient-to-r from-white to-blue-50/70 p-4"
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="grid size-11 place-items-center rounded-2xl bg-[#061a3a] text-sm font-black text-white">
+                  {index + 1}
+                </div>
+
+                <div>
+                  <p className="font-extrabold tracking-[-0.025em] text-[#061a3a]">
+                    {designer.name}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-600">
+                    {designer.focus}
+                  </p>
+                  <p className="mt-2 text-xs font-medium text-slate-500">
+                    {designer.note}
+                  </p>
+                </div>
+              </div>
+
+              <div className="shrink-0 text-right">
+                <p className="text-2xl font-black tracking-[-0.05em] text-blue-700">
+                  {designer.score}
+                </p>
+                <p className="text-xs font-bold text-slate-500">
+                  Taste gap {designer.gap}
+                </p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BenefitItem({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-start gap-3 rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
+      <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600" />
+      <p className="text-sm font-bold leading-6 text-[#061a3a]">{children}</p>
+    </div>
+  );
+}
+
+function ModuleCard({ index, title }: { index: number; title: string }) {
+  return (
+    <div className="rounded-[1.2rem] border border-blue-100 bg-white p-5 shadow-[0_14px_50px_rgba(15,65,145,0.07)]">
+      <p className="text-xs font-black uppercase tracking-[0.2em] text-blue-300">
+        Module {String(index).padStart(2, "0")}
+      </p>
+      <p className="mt-3 text-lg font-extrabold tracking-[-0.035em] text-[#061a3a]">
+        {title}
+      </p>
+    </div>
+  );
+}
+
+function FeeRow({
+  range,
+  fee,
+  note,
+}: {
+  range: string;
+  fee: string;
+  note: string;
+}) {
+  return (
+    <div className="grid gap-3 rounded-[1.25rem] border border-blue-100 bg-blue-50/60 p-4 md:grid-cols-[0.9fr_0.35fr_1fr] md:items-center">
+      <div>
+        <p className="text-sm font-black text-[#061a3a]">{range}</p>
+        <p className="mt-1 text-xs font-medium text-slate-500">{note}</p>
+      </div>
+      <div className="w-fit rounded-full bg-[#061a3a] px-4 py-2 text-sm font-black text-white">
+        {fee}
+      </div>
+      <p className="text-sm font-medium leading-6 text-slate-600">
+        Phí nền tảng được trừ sau khi payment được admin xác nhận.
       </p>
     </div>
   );

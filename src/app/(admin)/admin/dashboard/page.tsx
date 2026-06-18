@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   ArrowRight,
+  Banknote,
   BriefcaseBusiness,
   CheckCircle2,
   CircleDollarSign,
@@ -14,6 +15,7 @@ import {
   Store,
   TriangleAlert,
   UserRound,
+  WalletCards,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -39,6 +41,15 @@ type RequestRow = {
   created_at: string;
 };
 
+type JobPaymentRow = {
+  id: string;
+  amount_vnd: number;
+  status: string;
+  transfer_note: string | null;
+  platform_fee_vnd: number | null;
+  designer_revenue_vnd: number | null;
+};
+
 type JobRow = {
   id: string;
   title: string;
@@ -55,19 +66,17 @@ type JobRow = {
     business_name: string;
     category: string;
   } | null;
-  payments: {
-    id: string;
-    amount_vnd: number;
-    status: string;
-    transfer_note: string;
-  } | null;
+  payments: JobPaymentRow[] | JobPaymentRow | null;
 };
 
 type PaymentRow = {
   id: string;
+  job_id: string | null;
   amount_vnd: number;
   status: string;
-  transfer_note: string;
+  transfer_note: string | null;
+  platform_fee_vnd: number | null;
+  designer_revenue_vnd: number | null;
   created_at: string;
   confirmed_at: string | null;
 };
@@ -78,12 +87,14 @@ type DesignerRow = {
   headline: string | null;
   rating: number;
   completed_jobs: number;
+  availability: string | null;
+  verification_status: string | null;
 };
 
 type ReviewRow = {
   id: string;
   rating: number;
-  comment: string;
+  comment: string | null;
   created_at: string;
   designer_profiles: {
     display_name: string;
@@ -139,7 +150,9 @@ export default async function AdminDashboardPage() {
           id,
           amount_vnd,
           status,
-          transfer_note
+          transfer_note,
+          platform_fee_vnd,
+          designer_revenue_vnd
         )
       `,
       )
@@ -147,12 +160,34 @@ export default async function AdminDashboardPage() {
 
     adminSupabase
       .from("payments")
-      .select("id, amount_vnd, status, transfer_note, created_at, confirmed_at")
+      .select(
+        `
+        id,
+        job_id,
+        amount_vnd,
+        status,
+        transfer_note,
+        platform_fee_vnd,
+        designer_revenue_vnd,
+        created_at,
+        confirmed_at
+      `,
+      )
       .order("created_at", { ascending: false }),
 
     adminSupabase
       .from("designer_profiles")
-      .select("id, display_name, headline, rating, completed_jobs")
+      .select(
+        `
+        id,
+        display_name,
+        headline,
+        rating,
+        completed_jobs,
+        availability,
+        verification_status
+      `,
+      )
       .order("rating", { ascending: false }),
 
     adminSupabase
@@ -189,13 +224,37 @@ export default async function AdminDashboardPage() {
     (job) => job.status === "payment_pending",
   ).length;
 
+  const pendingPayments = payments.filter((payment) =>
+    ["waiting_transfer", "pending"].includes(payment.status),
+  );
+
   const confirmedPayments = payments.filter((payment) =>
-    ["confirmed", "paid", "succeeded"].includes(payment.status),
+    ["confirmed", "paid", "succeeded", "completed"].includes(payment.status),
   );
 
   const confirmedRevenue = confirmedPayments.reduce(
     (total, payment) => total + Number(payment.amount_vnd ?? 0),
     0,
+  );
+
+  const platformRevenue = confirmedPayments.reduce(
+    (total, payment) => total + Number(payment.platform_fee_vnd ?? 0),
+    0,
+  );
+
+  const designerPayout = confirmedPayments.reduce(
+    (total, payment) => total + Number(payment.designer_revenue_vnd ?? 0),
+    0,
+  );
+
+  const pendingDesigners = designers.filter((designer) =>
+    ["pending", "in_review", null, undefined].includes(
+      designer.verification_status,
+    ),
+  );
+
+  const approvedDesigners = designers.filter(
+    (designer) => designer.verification_status === "approved",
   );
 
   const averageRating =
@@ -212,6 +271,8 @@ export default async function AdminDashboardPage() {
   const latestRequests = requests.slice(0, 5);
   const topDesigners = designers.slice(0, 5);
   const latestReviews = reviews.slice(0, 3);
+  const latestPendingPayments = pendingPayments.slice(0, 5);
+  const latestPendingDesigners = pendingDesigners.slice(0, 5);
 
   return (
     <DashboardShell
@@ -242,76 +303,193 @@ export default async function AdminDashboardPage() {
         />
 
         <MetricCard
-          label="Active jobs"
-          value={`${activeJobs}`}
-          description="Job đang thực hiện"
-          icon={<BriefcaseBusiness className="size-5" />}
-          href="/admin/jobs"
+          label="Pending payments"
+          value={`${pendingPayments.length}`}
+          description="Payment cần admin xử lý"
+          icon={<CreditCard className="size-5" />}
+          href="/admin/payments"
+          tone={pendingPayments.length > 0 ? "warning" : "normal"}
         />
 
         <MetricCard
-          label="Confirmed revenue"
-          value={formatCurrencyVnd(confirmedRevenue)}
-          description="Tổng payment đã xác nhận"
+          label="Platform revenue"
+          value={formatCurrencyVnd(platformRevenue)}
+          description="Phí nền tảng đã ghi nhận"
           icon={<CircleDollarSign className="size-5" />}
           href="/admin/payments"
           tone="success"
         />
 
         <MetricCard
-          label="Marketplace rating"
-          value={reviews.length > 0 ? `${averageRating.toFixed(1)}/5` : "N/A"}
-          description="Rating trung bình từ review"
-          icon={<Star className="size-5 fill-current" />}
-          href="/admin/reviews"
-          tone={lowRatingReviews > 0 ? "warning" : "normal"}
+          label="Designer approval"
+          value={`${pendingDesigners.length}`}
+          description="Designer cần duyệt hồ sơ"
+          icon={<ShieldCheck className="size-5" />}
+          href="/admin/designers"
+          tone={pendingDesigners.length > 0 ? "warning" : "normal"}
         />
       </section>
 
       <section className="mt-5">
-        <SurfaceCard className="p-6">
-          <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr] xl:items-center">
-            <div>
-              <p className="text-sm font-black uppercase tracking-[0.22em] text-blue-600">
-                Operating signal
-              </p>
+        <SurfaceCard className="overflow-hidden p-0">
+          <div className="bg-gradient-to-br from-[#061a3a] via-[#0b2a61] to-blue-700 p-6 text-white">
+            <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr] xl:items-center">
+              <div>
+                <p className="text-sm font-black uppercase tracking-[0.22em] text-sky-200/75">
+                  Operating command center
+                </p>
 
-              <h2 className="mt-3 text-3xl font-extrabold tracking-[-0.055em] text-[#061a3a]">
-                Sức khỏe vận hành marketplace
-              </h2>
+                <h2 className="mt-3 text-3xl font-extrabold tracking-[-0.055em] text-white">
+                  Trung tâm vận hành marketplace
+                </h2>
 
-              <p className="mt-3 max-w-3xl text-sm font-medium leading-7 text-slate-600">
-                Admin dùng bảng này để kiểm tra nhanh số lượng request, job,
-                payment, designer và tín hiệu chất lượng từ review customer.
-              </p>
-            </div>
+                <p className="mt-3 max-w-3xl text-sm font-medium leading-7 text-white/70">
+                  Admin dùng bảng này để kiểm soát payment, job, designer, doanh
+                  thu nền tảng và các tín hiệu rủi ro từ review customer.
+                </p>
+              </div>
 
-            <div className="grid gap-3 md:grid-cols-3">
-              <SignalBox
-                icon={<CheckCircle2 className="size-4" />}
-                label="Completed jobs"
-                value={`${completedJobs} job đã hoàn thành`}
-              />
+              <div className="grid gap-3 md:grid-cols-3">
+                <DarkSignalBox
+                  icon={<Banknote className="size-4" />}
+                  label="Customer paid"
+                  value={formatCurrencyVnd(confirmedRevenue)}
+                />
 
-              <SignalBox
-                icon={<CreditCard className="size-4" />}
-                label="Payment pending"
-                value={`${paymentPendingJobs} job chờ payment`}
-                tone={paymentPendingJobs > 0 ? "warning" : "normal"}
-              />
+                <DarkSignalBox
+                  icon={<WalletCards className="size-4" />}
+                  label="Designer payout"
+                  value={formatCurrencyVnd(designerPayout)}
+                />
 
-              <SignalBox
-                icon={<TriangleAlert className="size-4" />}
-                label="Quality risk"
-                value={
-                  lowRatingReviews > 0
-                    ? `${lowRatingReviews} review cần kiểm tra`
-                    : "Chưa có tín hiệu rủi ro"
-                }
-                tone={lowRatingReviews > 0 ? "warning" : "normal"}
-              />
+                <DarkSignalBox
+                  icon={<BriefcaseBusiness className="size-4" />}
+                  label="Active jobs"
+                  value={`${activeJobs} đang thực hiện`}
+                />
+              </div>
             </div>
           </div>
+
+          <div className="grid gap-3 p-6 md:grid-cols-2 xl:grid-cols-4">
+            <SignalBox
+              icon={<CheckCircle2 className="size-4" />}
+              label="Completed jobs"
+              value={`${completedJobs} job đã hoàn thành`}
+            />
+
+            <SignalBox
+              icon={<CreditCard className="size-4" />}
+              label="Payment pending"
+              value={`${paymentPendingJobs} job chờ payment`}
+              tone={paymentPendingJobs > 0 ? "warning" : "normal"}
+            />
+
+            <SignalBox
+              icon={<UserRound className="size-4" />}
+              label="Approved designers"
+              value={`${approvedDesigners.length} designer đã duyệt`}
+            />
+
+            <SignalBox
+              icon={<TriangleAlert className="size-4" />}
+              label="Quality risk"
+              value={
+                lowRatingReviews > 0
+                  ? `${lowRatingReviews} review cần kiểm tra`
+                  : "Chưa có tín hiệu rủi ro"
+              }
+              tone={lowRatingReviews > 0 ? "warning" : "normal"}
+            />
+          </div>
+        </SurfaceCard>
+      </section>
+
+      <section className="mt-5 grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+        <SurfaceCard className="p-6">
+          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.22em] text-blue-600">
+                Payment queue
+              </p>
+
+              <h2 className="mt-3 text-2xl font-extrabold tracking-[-0.045em] text-[#061a3a]">
+                Payment cần xác nhận
+              </h2>
+
+              <p className="mt-3 text-sm font-medium leading-7 text-slate-600">
+                Ưu tiên xử lý các payment chờ chuyển khoản hoặc chờ admin duyệt
+                để job có thể chuyển sang trạng thái active.
+              </p>
+            </div>
+
+            <Button
+              asChild
+              variant="outline"
+              className="w-fit rounded-full border-blue-200 bg-white font-extrabold"
+            >
+              <Link href="/admin/payments">
+                Xem payment
+                <ArrowRight className="ml-2 size-4" />
+              </Link>
+            </Button>
+          </div>
+
+          {latestPendingPayments.length === 0 ? (
+            <EmptyState
+              title="Không có payment đang chờ."
+              description="Các payment chờ xử lý sẽ xuất hiện tại đây để admin xác nhận hoặc từ chối."
+            />
+          ) : (
+            <div className="mt-6 grid gap-3">
+              {latestPendingPayments.map((payment) => (
+                <PaymentQueueCard key={payment.id} payment={payment} />
+              ))}
+            </div>
+          )}
+        </SurfaceCard>
+
+        <SurfaceCard className="p-6">
+          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.22em] text-blue-600">
+                Designer approval
+              </p>
+
+              <h2 className="mt-3 text-2xl font-extrabold tracking-[-0.045em] text-[#061a3a]">
+                Designer cần duyệt
+              </h2>
+
+              <p className="mt-3 text-sm font-medium leading-7 text-slate-600">
+                Kiểm tra hồ sơ designer trước khi cho phép xuất hiện trong
+                matching.
+              </p>
+            </div>
+
+            <Button
+              asChild
+              variant="outline"
+              className="w-fit rounded-full border-blue-200 bg-white font-extrabold"
+            >
+              <Link href="/admin/designers">
+                Xem designer
+                <ArrowRight className="ml-2 size-4" />
+              </Link>
+            </Button>
+          </div>
+
+          {latestPendingDesigners.length === 0 ? (
+            <EmptyState
+              title="Không có designer đang chờ duyệt."
+              description="Designer mới đăng ký hoặc chưa được duyệt sẽ xuất hiện tại đây."
+            />
+          ) : (
+            <div className="mt-6 grid gap-3">
+              {latestPendingDesigners.map((designer) => (
+                <DesignerApprovalCard key={designer.id} designer={designer} />
+              ))}
+            </div>
+          )}
         </SurfaceCard>
       </section>
 
@@ -485,6 +663,276 @@ export default async function AdminDashboardPage() {
   );
 }
 
+function PaymentQueueCard({ payment }: { payment: PaymentRow }) {
+  const paymentStatus = getSafePaymentStatusMeta(payment.status);
+
+  return (
+    <div className="rounded-[1.15rem] border border-amber-200 bg-amber-50 p-4">
+      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
+        <div>
+          <div className="flex flex-wrap gap-2">
+            <StatusPill tone={paymentStatus.tone}>
+              {paymentStatus.label}
+            </StatusPill>
+
+            {payment.transfer_note ? (
+              <StatusPill tone="info">{payment.transfer_note}</StatusPill>
+            ) : null}
+          </div>
+
+          <h3 className="mt-3 text-lg font-extrabold tracking-[-0.035em] text-[#061a3a]">
+            {formatCurrencyVnd(payment.amount_vnd)}
+          </h3>
+
+          <p className="mt-1 text-sm font-bold text-amber-800">
+            {payment.confirmed_at
+              ? `Confirmed ${formatDateVi(payment.confirmed_at)}`
+              : `Created ${formatDateVi(payment.created_at)}`}
+          </p>
+        </div>
+
+        <Button
+          asChild
+          variant="outline"
+          className="w-fit shrink-0 rounded-full border-amber-200 bg-white font-extrabold"
+        >
+          <Link href="/admin/payments">
+            Xử lý
+            <ArrowRight className="ml-2 size-4" />
+          </Link>
+        </Button>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <MiniInfo
+          label="Customer paid"
+          value={formatCurrencyVnd(payment.amount_vnd)}
+        />
+
+        <MiniInfo
+          label="Platform fee"
+          value={formatCurrencyVnd(Number(payment.platform_fee_vnd ?? 0))}
+        />
+
+        <MiniInfo
+          label="Designer receives"
+          value={formatCurrencyVnd(Number(payment.designer_revenue_vnd ?? 0))}
+        />
+      </div>
+    </div>
+  );
+}
+
+function DesignerApprovalCard({ designer }: { designer: DesignerRow }) {
+  const verification = getDesignerVerificationView(designer.verification_status);
+
+  return (
+    <div className="rounded-[1.15rem] border border-blue-100 bg-blue-50/65 p-4">
+      <div className="flex items-start gap-4">
+        <div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-white text-blue-700 ring-1 ring-blue-100">
+          <UserRound className="size-5" />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap gap-2">
+            <StatusPill tone={verification.tone}>{verification.label}</StatusPill>
+
+            <RatingPill rating={designer.rating ?? 0} />
+          </div>
+
+          <h3 className="mt-3 text-lg font-extrabold tracking-[-0.035em] text-[#061a3a]">
+            {designer.display_name}
+          </h3>
+
+          <p className="mt-1 text-sm font-bold leading-6 text-blue-700">
+            {designer.headline ?? "Designer"}
+          </p>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <StatusPill tone="neutral">
+              {`${designer.completed_jobs ?? 0} completed`}
+            </StatusPill>
+
+            <StatusPill tone="info">
+              {getAvailabilityLabel(designer.availability)}
+            </StatusPill>
+          </div>
+        </div>
+
+        <Button
+          asChild
+          variant="outline"
+          className="w-fit shrink-0 rounded-full border-blue-200 bg-white font-extrabold"
+        >
+          <Link href="/admin/designers">
+            Duyệt
+            <ArrowRight className="ml-2 size-4" />
+          </Link>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function LatestJobCard({ job }: { job: JobRow }) {
+  const jobStatus = getSafeJobStatusMeta(job.status);
+  const payment = getPrimaryPaymentFromJob(job);
+  const paymentStatus = payment ? getSafePaymentStatusMeta(payment.status) : null;
+
+  return (
+    <div className="rounded-[1.15rem] border border-blue-100 bg-blue-50/65 p-4">
+      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
+        <div className="min-w-0">
+          <div className="flex flex-wrap gap-2">
+            <StatusPill tone={jobStatus.tone}>{jobStatus.label}</StatusPill>
+
+            {paymentStatus ? (
+              <StatusPill tone={paymentStatus.tone}>
+                {paymentStatus.label}
+              </StatusPill>
+            ) : null}
+          </div>
+
+          <h3 className="mt-3 text-lg font-extrabold tracking-[-0.035em] text-[#061a3a]">
+            {job.title}
+          </h3>
+
+          <p className="mt-1 text-sm font-bold text-blue-700">
+            {job.design_requests?.business_name ?? "Chưa rõ thương hiệu"}
+          </p>
+        </div>
+
+        <Button
+          asChild
+          variant="outline"
+          className="w-fit shrink-0 rounded-full border-blue-200 bg-white font-extrabold"
+        >
+          <Link href={`/admin/jobs/${job.id}`}>
+            Mở
+            <ArrowRight className="ml-2 size-4" />
+          </Link>
+        </Button>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <MiniInfo
+          label="Price"
+          value={formatCurrencyVnd(job.agreed_price_vnd)}
+        />
+
+        <MiniInfo
+          label="Designer"
+          value={job.designer_profiles?.display_name ?? "N/A"}
+        />
+
+        <MiniInfo label="Created" value={formatDateVi(job.created_at)} />
+      </div>
+    </div>
+  );
+}
+
+function LatestRequestCard({ request }: { request: RequestRow }) {
+  return (
+    <div className="rounded-[1.15rem] border border-blue-100 bg-blue-50/65 p-4">
+      <div className="flex flex-wrap gap-2">
+        <StatusPill tone="neutral">
+          {getSafeCategoryLabel(request.category)}
+        </StatusPill>
+
+        <StatusPill tone="info">{request.status}</StatusPill>
+      </div>
+
+      <h3 className="mt-3 text-lg font-extrabold tracking-[-0.035em] text-[#061a3a]">
+        {request.title}
+      </h3>
+
+      <p className="mt-1 text-sm font-bold text-blue-700">
+        {request.business_name}
+      </p>
+
+      <p className="mt-3 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+        {formatDateVi(request.created_at)}
+      </p>
+    </div>
+  );
+}
+
+function TopDesignerCard({
+  designer,
+  rank,
+}: {
+  designer: DesignerRow;
+  rank: number;
+}) {
+  const verification = getDesignerVerificationView(designer.verification_status);
+
+  return (
+    <div className="rounded-[1.15rem] border border-blue-100 bg-blue-50/65 p-4">
+      <div className="flex items-start gap-4">
+        <div className="grid size-10 shrink-0 place-items-center rounded-2xl bg-white text-sm font-black text-blue-700 ring-1 ring-blue-100">
+          #{rank}
+        </div>
+
+        <div className="min-w-0">
+          <div className="flex flex-wrap gap-2">
+            <RatingPill rating={designer.rating ?? 0} />
+
+            <StatusPill tone={verification.tone}>
+              {verification.label}
+            </StatusPill>
+
+            <StatusPill tone="neutral">
+              {`${designer.completed_jobs ?? 0} completed`}
+            </StatusPill>
+          </div>
+
+          <h3 className="mt-3 text-lg font-extrabold tracking-[-0.035em] text-[#061a3a]">
+            {designer.display_name}
+          </h3>
+
+          <p className="mt-1 text-sm font-bold leading-6 text-blue-700">
+            {designer.headline ?? "Designer"}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LatestReviewCard({ review }: { review: ReviewRow }) {
+  return (
+    <div className="rounded-[1.15rem] border border-blue-100 bg-blue-50/65 p-4">
+      <div className="flex flex-wrap gap-2">
+        <RatingPill rating={review.rating} />
+
+        <StatusPill tone="neutral">
+          {review.designer_profiles?.display_name ?? "Designer"}
+        </StatusPill>
+      </div>
+
+      <p className="mt-3 text-sm font-medium leading-7 text-slate-700">
+        {review.comment ?? "Customer không để lại nhận xét chi tiết."}
+      </p>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+          {formatDateVi(review.created_at)}
+        </p>
+
+        {review.jobs ? (
+          <Button
+            asChild
+            variant="outline"
+            className="rounded-full border-blue-200 bg-white font-extrabold"
+          >
+            <Link href={`/admin/jobs/${review.jobs.id}`}>Mở job</Link>
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function ErrorPanel({ errors }: { errors: Array<string | undefined> }) {
   const realErrors = errors.filter((error): error is string => Boolean(error));
 
@@ -602,158 +1050,25 @@ function SignalBox({
   );
 }
 
-function LatestJobCard({ job }: { job: JobRow }) {
-  const jobStatus = getSafeJobStatusMeta(job.status);
-  const paymentStatus = job.payments
-    ? getPaymentStatusMeta(
-        job.payments.status as Parameters<typeof getPaymentStatusMeta>[0],
-      )
-    : null;
-
-  return (
-    <div className="rounded-[1.15rem] border border-blue-100 bg-blue-50/65 p-4">
-      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
-        <div className="min-w-0">
-          <div className="flex flex-wrap gap-2">
-            <StatusPill tone={jobStatus.tone}>{jobStatus.label}</StatusPill>
-
-            {paymentStatus ? (
-              <StatusPill tone={paymentStatus.tone}>
-                {paymentStatus.label}
-              </StatusPill>
-            ) : null}
-          </div>
-
-          <h3 className="mt-3 text-lg font-extrabold tracking-[-0.035em] text-[#061a3a]">
-            {job.title}
-          </h3>
-
-          <p className="mt-1 text-sm font-bold text-blue-700">
-            {job.design_requests?.business_name ?? "Chưa rõ thương hiệu"}
-          </p>
-        </div>
-
-        <Button
-          asChild
-          variant="outline"
-          className="w-fit shrink-0 rounded-full border-blue-200 bg-white font-extrabold"
-        >
-          <Link href={`/admin/jobs/${job.id}`}>
-            Mở
-            <ArrowRight className="ml-2 size-4" />
-          </Link>
-        </Button>
-      </div>
-
-      <div className="mt-4 grid gap-3 md:grid-cols-3">
-        <MiniInfo
-          label="Price"
-          value={formatCurrencyVnd(job.agreed_price_vnd)}
-        />
-
-        <MiniInfo
-          label="Designer"
-          value={job.designer_profiles?.display_name ?? "N/A"}
-        />
-
-        <MiniInfo label="Created" value={formatDateVi(job.created_at)} />
-      </div>
-    </div>
-  );
-}
-
-function LatestRequestCard({ request }: { request: RequestRow }) {
-  return (
-    <div className="rounded-[1.15rem] border border-blue-100 bg-blue-50/65 p-4">
-      <div className="flex flex-wrap gap-2">
-        <StatusPill tone="neutral">
-          {getCategoryLabel(request.category as Parameters<typeof getCategoryLabel>[0])}
-        </StatusPill>
-
-        <StatusPill tone="info">{request.status}</StatusPill>
-      </div>
-
-      <h3 className="mt-3 text-lg font-extrabold tracking-[-0.035em] text-[#061a3a]">
-        {request.title}
-      </h3>
-
-      <p className="mt-1 text-sm font-bold text-blue-700">
-        {request.business_name}
-      </p>
-
-      <p className="mt-3 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-        {formatDateVi(request.created_at)}
-      </p>
-    </div>
-  );
-}
-
-function TopDesignerCard({
-  designer,
-  rank,
+function DarkSignalBox({
+  icon,
+  label,
+  value,
 }: {
-  designer: DesignerRow;
-  rank: number;
+  icon: ReactNode;
+  label: string;
+  value: string;
 }) {
   return (
-    <div className="rounded-[1.15rem] border border-blue-100 bg-blue-50/65 p-4">
-      <div className="flex items-start gap-4">
-        <div className="grid size-10 shrink-0 place-items-center rounded-2xl bg-white text-sm font-black text-blue-700 ring-1 ring-blue-100">
-          #{rank}
-        </div>
-
-        <div className="min-w-0">
-          <div className="flex flex-wrap gap-2">
-            <RatingPill rating={designer.rating ?? 0} />
-
-            <StatusPill tone="neutral">
-              {`${designer.completed_jobs ?? 0} completed`}
-            </StatusPill>
-          </div>
-
-          <h3 className="mt-3 text-lg font-extrabold tracking-[-0.035em] text-[#061a3a]">
-            {designer.display_name}
-          </h3>
-
-          <p className="mt-1 text-sm font-bold leading-6 text-blue-700">
-            {designer.headline ?? "Designer"}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LatestReviewCard({ review }: { review: ReviewRow }) {
-  return (
-    <div className="rounded-[1.15rem] border border-blue-100 bg-blue-50/65 p-4">
-      <div className="flex flex-wrap gap-2">
-        <RatingPill rating={review.rating} />
-
-        <StatusPill tone="neutral">
-          {review.designer_profiles?.display_name ?? "Designer"}
-        </StatusPill>
+    <div className="rounded-[1.15rem] border border-white/10 bg-white/10 p-4">
+      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-sky-200/75">
+        {icon}
+        {label}
       </div>
 
-      <p className="mt-3 text-sm font-medium leading-7 text-slate-700">
-        {review.comment}
+      <p className="mt-2 text-sm font-extrabold leading-6 text-white">
+        {value}
       </p>
-
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-          {formatDateVi(review.created_at)}
-        </p>
-
-        {review.jobs ? (
-          <Button
-            asChild
-            variant="outline"
-            className="rounded-full border-blue-200 bg-white font-extrabold"
-          >
-            <Link href={`/admin/jobs/${review.jobs.id}`}>Mở job</Link>
-          </Button>
-        ) : null}
-      </div>
     </div>
   );
 }
@@ -805,6 +1120,14 @@ function EmptyState({
   );
 }
 
+function getPrimaryPaymentFromJob(job: JobRow) {
+  if (Array.isArray(job.payments)) {
+    return job.payments[0] ?? null;
+  }
+
+  return job.payments;
+}
+
 function getSafeJobStatusMeta(status: string) {
   if (status === "completed") {
     return {
@@ -813,5 +1136,124 @@ function getSafeJobStatusMeta(status: string) {
     };
   }
 
-  return getJobStatusMeta(status as Parameters<typeof getJobStatusMeta>[0]);
+  if (status === "payment_pending") {
+    return {
+      label: "Chờ thanh toán",
+      tone: "warning" as const,
+    };
+  }
+
+  if (status === "active") {
+    return {
+      label: "Đang thực hiện",
+      tone: "info" as const,
+    };
+  }
+
+  if (status === "cancelled") {
+    return {
+      label: "Đã hủy",
+      tone: "warning" as const,
+    };
+  }
+
+  try {
+    return getJobStatusMeta(status as Parameters<typeof getJobStatusMeta>[0]);
+  } catch {
+    return {
+      label: status,
+      tone: "neutral" as const,
+    };
+  }
+}
+
+function getSafePaymentStatusMeta(status: string) {
+  if (status === "waiting_transfer") {
+    return {
+      label: "Chờ chuyển khoản",
+      tone: "warning" as const,
+    };
+  }
+
+  if (status === "pending") {
+    return {
+      label: "Chờ admin duyệt",
+      tone: "warning" as const,
+    };
+  }
+
+  if (["confirmed", "paid", "completed", "succeeded"].includes(status)) {
+    return {
+      label: "Đã xác nhận",
+      tone: "success" as const,
+    };
+  }
+
+  if (status === "rejected") {
+    return {
+      label: "Bị từ chối",
+      tone: "warning" as const,
+    };
+  }
+
+  try {
+    return getPaymentStatusMeta(
+      status as Parameters<typeof getPaymentStatusMeta>[0],
+    );
+  } catch {
+    return {
+      label: status,
+      tone: "neutral" as const,
+    };
+  }
+}
+
+function getDesignerVerificationView(status: string | null) {
+  if (status === "approved") {
+    return {
+      label: "Đã duyệt",
+      tone: "success" as const,
+    };
+  }
+
+  if (status === "rejected") {
+    return {
+      label: "Bị từ chối",
+      tone: "warning" as const,
+    };
+  }
+
+  if (status === "in_review") {
+    return {
+      label: "Đang xét duyệt",
+      tone: "warning" as const,
+    };
+  }
+
+  if (status === "pending" || !status) {
+    return {
+      label: "Chờ duyệt",
+      tone: "warning" as const,
+    };
+  }
+
+  return {
+    label: status,
+    tone: "neutral" as const,
+  };
+}
+
+function getAvailabilityLabel(status: string | null) {
+  if (status === "available" || status === "open") return "Đang nhận job";
+  if (status === "busy") return "Đang bận";
+  if (status === "unavailable") return "Tạm nghỉ";
+  return "Chưa rõ";
+}
+
+function getSafeCategoryLabel(category: string) {
+  try {
+    return getCategoryLabel(category as Parameters<typeof getCategoryLabel>[0]);
+  } catch {
+    return category;
+  }
 }

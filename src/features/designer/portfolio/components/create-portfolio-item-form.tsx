@@ -1,6 +1,6 @@
 "use client";
 
-import { ImageIcon, Loader2, Plus } from "lucide-react";
+import { ImageIcon, Loader2, Plus, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -36,6 +36,18 @@ const industryOptions = [
   },
 ];
 
+type CreatePortfolioResponse = {
+  message?: string;
+  aiAnalysisStatus?: "completed" | "failed" | "skipped";
+  portfolioItem?: {
+    id: string;
+    title: string;
+  };
+};
+
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const allowedImageTypes = ["image/png", "image/jpeg", "image/webp"];
+
 export function CreatePortfolioItemForm() {
   const router = useRouter();
 
@@ -45,6 +57,7 @@ export function CreatePortfolioItemForm() {
   const [industry, setIndustry] = useState(industryOptions[0].value);
   const [image, setImage] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitStep, setSubmitStep] = useState("");
 
   const previewUrl = useMemo(() => {
     if (!image) return null;
@@ -56,6 +69,24 @@ export function CreatePortfolioItemForm() {
     const selectedFile = event.target.files?.[0];
 
     if (!selectedFile) {
+      setImage(null);
+      return;
+    }
+
+    if (!allowedImageTypes.includes(selectedFile.type)) {
+      toast.error("Ảnh không hợp lệ", {
+        description: "Chỉ hỗ trợ PNG, JPG hoặc WEBP.",
+      });
+      event.target.value = "";
+      setImage(null);
+      return;
+    }
+
+    if (selectedFile.size > MAX_FILE_SIZE) {
+      toast.error("Ảnh quá nặng", {
+        description: "Dung lượng tối đa là 5MB.",
+      });
+      event.target.value = "";
       setImage(null);
       return;
     }
@@ -98,6 +129,11 @@ export function CreatePortfolioItemForm() {
     }
 
     setIsSubmitting(true);
+    setSubmitStep(
+      image
+        ? "Đang upload portfolio và phân tích Style DNA..."
+        : "Đang thêm portfolio...",
+    );
 
     try {
       const response = await fetch("/api/designer/portfolio", {
@@ -105,9 +141,7 @@ export function CreatePortfolioItemForm() {
         body: formData,
       });
 
-      const result = (await response.json()) as {
-        message?: string;
-      };
+      const result = (await response.json()) as CreatePortfolioResponse;
 
       if (!response.ok) {
         toast.error("Không thể thêm portfolio", {
@@ -116,9 +150,23 @@ export function CreatePortfolioItemForm() {
         return;
       }
 
-      toast.success("Đã thêm portfolio", {
-        description: result.message,
-      });
+      if (result.aiAnalysisStatus === "completed") {
+        toast.success("Đã thêm portfolio và cập nhật Designer Style DNA", {
+          description: result.message,
+        });
+      } else if (result.aiAnalysisStatus === "failed") {
+        toast.warning("Đã thêm portfolio nhưng AI chưa phân tích được", {
+          description:
+            result.message ??
+            "Bạn có thể phân tích lại portfolio này sau khi kiểm tra ảnh.",
+        });
+      } else {
+        toast.success("Đã thêm portfolio", {
+          description:
+            result.message ??
+            "Portfolio chưa có ảnh nên AI DNA chưa được cập nhật.",
+        });
+      }
 
       setTitle("");
       setDescription("");
@@ -129,6 +177,7 @@ export function CreatePortfolioItemForm() {
       router.refresh();
     } finally {
       setIsSubmitting(false);
+      setSubmitStep("");
     }
   }
 
@@ -152,13 +201,26 @@ export function CreatePortfolioItemForm() {
           </h3>
 
           <p className="mt-2 text-sm font-medium leading-7 text-slate-600">
-            Portfolio này sẽ được lưu thật vào Supabase và dùng làm dữ liệu cho
-            Style DNA.
+            Portfolio này sẽ được AI phân tích phong cách và cộng dồn vào
+            Designer Style DNA. DNA không bị ghi đè bởi một portfolio mới.
           </p>
         </div>
       </div>
 
       <div className="mt-5 grid gap-4">
+        <div className="rounded-2xl border border-blue-100 bg-white p-4">
+          <div className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.16em] text-blue-600">
+            <Sparkles className="size-4" />
+            AI Style DNA
+          </div>
+
+          <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
+            Sau khi upload ảnh portfolio, AI sẽ trích xuất style tags, mood,
+            màu sắc, typography, layout và điểm mạnh visual. Các tín hiệu này
+            được cộng dồn vào DNA tổng hợp của designer.
+          </p>
+        </div>
+
         <div className="grid gap-2">
           <Label htmlFor="portfolio-title" className="font-extrabold">
             Tên portfolio
@@ -244,7 +306,8 @@ export function CreatePortfolioItemForm() {
           />
 
           <p className="text-xs font-medium leading-5 text-slate-500">
-            Hỗ trợ PNG, JPG, WEBP. Dung lượng tối đa 5MB.
+            Hỗ trợ PNG, JPG, WEBP. Dung lượng tối đa 5MB. Nên upload ảnh rõ ràng
+            để AI phân tích Style DNA chính xác hơn.
           </p>
         </div>
 
@@ -275,12 +338,12 @@ export function CreatePortfolioItemForm() {
           {isSubmitting ? (
             <>
               <Loader2 className="mr-2 size-4 animate-spin" />
-              Đang thêm portfolio
+              {submitStep || "Đang thêm portfolio"}
             </>
           ) : (
             <>
               <Plus className="mr-2 size-4" />
-              Thêm portfolio
+              Thêm portfolio + cập nhật DNA
             </>
           )}
         </Button>

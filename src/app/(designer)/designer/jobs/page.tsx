@@ -32,7 +32,7 @@ type DesignerJobRow = {
   id: string;
   title: string;
   status: string;
-  agreed_price_vnd: number;
+  designer_revenue_vnd: number | null;
   started_at: string | null;
   due_at: string | null;
   created_at: string;
@@ -44,15 +44,13 @@ type DesignerJobRow = {
     category: string;
     description: string;
     target_audience: string | null;
-    budget_min_vnd: number;
-    budget_max_vnd: number;
     deadline: string | null;
-    preferred_styles: string[];
+    preferred_styles: string[] | null;
   } | null;
   payments: {
     id: string;
-    amount_vnd: number;
     status: string;
+    designer_revenue_vnd: number | null;
     confirmed_at: string | null;
   } | null;
 };
@@ -75,7 +73,7 @@ export default async function DesignerJobsPage() {
       id,
       title,
       status,
-      agreed_price_vnd,
+      designer_revenue_vnd,
       started_at,
       due_at,
       created_at,
@@ -87,15 +85,13 @@ export default async function DesignerJobsPage() {
         category,
         description,
         target_audience,
-        budget_min_vnd,
-        budget_max_vnd,
         deadline,
         preferred_styles
       ),
       payments (
         id,
-        amount_vnd,
         status,
+        designer_revenue_vnd,
         confirmed_at
       )
     `,
@@ -110,10 +106,14 @@ export default async function DesignerJobsPage() {
     (job) => job.status === "payment_pending",
   );
 
-  const totalActiveValue = activeJobs.reduce(
-    (sum, job) => sum + job.agreed_price_vnd,
-    0,
-  );
+  const totalActiveDesignerRevenue = activeJobs.reduce((sum, job) => {
+    const payment = job.payments;
+
+    return (
+      sum +
+      Number(payment?.designer_revenue_vnd ?? job.designer_revenue_vnd ?? 0)
+    );
+  }, 0);
 
   return (
     <DashboardShell
@@ -147,9 +147,9 @@ export default async function DesignerJobsPage() {
 
         <DashboardStatCard
           icon={Palette}
-          label="Active value"
-          value={formatCurrencyVnd(totalActiveValue)}
-          description="Tổng giá trị các job đang active."
+          label="Thu nhập active"
+          value={formatCurrencyVnd(totalActiveDesignerRevenue)}
+          description="Tổng tiền designer nhận từ các job đang active."
         />
       </section>
 
@@ -203,6 +203,10 @@ function DesignerJobCard({ job }: { job: DesignerJobRow }) {
       )
     : null;
 
+  const designerRevenue = Number(
+    payment?.designer_revenue_vnd ?? job.designer_revenue_vnd ?? 0,
+  );
+
   return (
     <SurfaceCard className="p-6">
       <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
@@ -252,8 +256,8 @@ function DesignerJobCard({ job }: { job: DesignerJobRow }) {
           <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <InfoBox
               icon={CircleDollarSign}
-              label="Agreed price"
-              value={formatCurrencyVnd(job.agreed_price_vnd)}
+              label="Thu nhập của bạn"
+              value={formatCurrencyVnd(designerRevenue)}
             />
 
             <InfoBox
@@ -277,13 +281,15 @@ function DesignerJobCard({ job }: { job: DesignerJobRow }) {
             />
           </div>
 
-          <div className="mt-5 flex flex-wrap gap-2">
-            {request.preferred_styles.map((style) => (
-              <StatusPill key={`${job.id}-${style}`} tone="neutral">
-                {getStyleLabel(style as Parameters<typeof getStyleLabel>[0])}
-              </StatusPill>
-            ))}
-          </div>
+          {request.preferred_styles && request.preferred_styles.length > 0 ? (
+            <div className="mt-5 flex flex-wrap gap-2">
+              {request.preferred_styles.map((style) => (
+                <StatusPill key={`${job.id}-${style}`} tone="neutral">
+                  {getStyleLabel(style as Parameters<typeof getStyleLabel>[0])}
+                </StatusPill>
+              ))}
+            </div>
+          ) : null}
         </>
       ) : (
         <div className="mt-5 rounded-[1.25rem] border border-amber-200 bg-amber-50 p-5">
@@ -308,9 +314,8 @@ function DesignerJobCard({ job }: { job: DesignerJobRow }) {
             </p>
 
             <p className="mt-2 text-sm font-medium leading-7 text-slate-700">
-              Đây là trang xem job ở phía designer. Ở bước tiếp theo, ta sẽ làm
-              trang chi tiết job để designer xem AI brief, yêu cầu bàn giao và
-              cập nhật tiến độ.
+              Đây là trang xem job ở phía designer. Designer chỉ thấy thu nhập
+              mình nhận, trạng thái job, deadline và thông tin brief cần thiết.
             </p>
           </div>
         </div>

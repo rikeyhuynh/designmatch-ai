@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { analyzeDesignerPortfolio } from "@/lib/ai/tasks/designer-portfolio-analysis";
 import { getCurrentAuthState } from "@/lib/auth/current-user";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -122,8 +123,9 @@ export async function POST(request: Request) {
       category,
       industry,
       image_url: imageUrl,
+      ai_analysis_status: imageUrl ? "not_started" : "skipped",
     })
-    .select("id, title")
+    .select("id, designer_id, title, description, category, industry, image_url")
     .single();
 
   if (insertError) {
@@ -135,9 +137,41 @@ export async function POST(request: Request) {
     );
   }
 
+  let aiAnalysis: unknown = null;
+  let aiAnalysisStatus: "completed" | "failed" | "skipped" = imageUrl
+    ? "failed"
+    : "skipped";
+
+  if (imageUrl) {
+    try {
+      aiAnalysis = await analyzeDesignerPortfolio({
+        portfolioItemId: portfolioItem.id,
+        designerId: portfolioItem.designer_id,
+        title: portfolioItem.title,
+        description: portfolioItem.description,
+        category: portfolioItem.category,
+        industry: portfolioItem.industry,
+        imageUrl: portfolioItem.image_url,
+      });
+
+      aiAnalysisStatus = "completed";
+    } catch (analysisError) {
+      aiAnalysisStatus = "failed";
+
+      console.error("[DesignMatch AI] Portfolio analysis failed:", analysisError);
+    }
+  }
+
   return NextResponse.json({
-    message: "Đã thêm portfolio thành công.",
+    message:
+      aiAnalysisStatus === "completed"
+        ? "Đã thêm portfolio và cập nhật Designer Style DNA."
+        : imageUrl
+          ? "Đã thêm portfolio, nhưng AI chưa phân tích được DNA. Có thể phân tích lại sau."
+          : "Đã thêm portfolio. Portfolio chưa có ảnh nên AI DNA được bỏ qua.",
     portfolioItem,
+    aiAnalysisStatus,
+    aiAnalysis,
   });
 }
 

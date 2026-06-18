@@ -4,12 +4,16 @@ import {
   ArrowRight,
   BriefcaseBusiness,
   CalendarDays,
+  CheckCircle2,
   CircleDollarSign,
+  Clock3,
   FileText,
   Palette,
+  ShieldCheck,
   Sparkles,
   Store,
   Target,
+  TriangleAlert,
   UsersRound,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -38,25 +42,33 @@ type RequestRow = {
   budget_min_vnd: number;
   budget_max_vnd: number;
   deadline: string | null;
-  preferred_styles: string[];
+  preferred_styles: string[] | null;
   status: string;
+  brief_review_status: string | null;
+  brief_confirmed_at: string | null;
   created_at: string;
 };
 
 type AiBriefRow = {
   id: string;
-  request_id: string;
+  request_id: string | null;
+  design_request_id: string | null;
+  status: string | null;
+  confirmed_at: string | null;
+  brief_completeness_score: number | null;
 };
 
 type MatchRow = {
   id: string;
   request_id: string;
+  designer_id: string;
 };
 
 type JobRow = {
   id: string;
   request_id: string;
   status: string;
+  agreed_price_vnd: number;
 };
 
 export default async function AdminRequestsPage() {
@@ -87,16 +99,33 @@ export default async function AdminRequestsPage() {
           deadline,
           preferred_styles,
           status,
+          brief_review_status,
+          brief_confirmed_at,
           created_at
         `,
         )
         .order("created_at", { ascending: false }),
 
-      adminSupabase.from("ai_briefs").select("id, request_id"),
+      adminSupabase
+        .from("ai_briefs")
+        .select(
+          `
+          id,
+          request_id,
+          design_request_id,
+          status,
+          confirmed_at,
+          brief_completeness_score
+        `,
+        ),
 
-      adminSupabase.from("designer_matches").select("id, request_id"),
+      adminSupabase
+        .from("designer_matches")
+        .select("id, request_id, designer_id"),
 
-      adminSupabase.from("jobs").select("id, request_id, status"),
+      adminSupabase
+        .from("jobs")
+        .select("id, request_id, status, agreed_price_vnd"),
     ]);
 
   const requests = (requestsResult.data ?? []) as unknown as RequestRow[];
@@ -104,24 +133,61 @@ export default async function AdminRequestsPage() {
   const matches = (matchesResult.data ?? []) as unknown as MatchRow[];
   const jobs = (jobsResult.data ?? []) as unknown as JobRow[];
 
-  const briefRequestIds = new Set(briefs.map((brief) => brief.request_id));
-  const matchedRequestIds = new Set(matches.map((match) => match.request_id));
-  const jobRequestIds = new Set(jobs.map((job) => job.request_id));
-
   const totalRequests = requests.length;
-  const withBrief = requests.filter((request) =>
-    briefRequestIds.has(request.id),
-  ).length;
-  const withMatches = requests.filter((request) =>
-    matchedRequestIds.has(request.id),
-  ).length;
-  const withJobs = requests.filter((request) => jobRequestIds.has(request.id))
-    .length;
 
-  const needsAttention = requests.filter(
-    (request) =>
-      !briefRequestIds.has(request.id) || !matchedRequestIds.has(request.id),
+  const withBrief = requests.filter((request) =>
+    Boolean(findBriefForRequest(briefs, request.id)),
   ).length;
+
+  const confirmedBriefs = requests.filter((request) =>
+    isBriefConfirmed(request, findBriefForRequest(briefs, request.id)),
+  ).length;
+
+  const withMatches = requests.filter((request) =>
+    matches.some((match) => match.request_id === request.id),
+  ).length;
+
+  const withJobs = requests.filter((request) =>
+    jobs.some((job) => job.request_id === request.id),
+  ).length;
+
+  const activeJobs = jobs.filter((job) => job.status === "active").length;
+  const completedJobs = jobs.filter((job) => job.status === "completed").length;
+
+  const totalJobValue = jobs.reduce(
+    (total, job) => total + Number(job.agreed_price_vnd ?? 0),
+    0,
+  );
+
+  const needsAttention = requests.filter((request) => {
+    const brief = findBriefForRequest(briefs, request.id);
+    const requestMatches = matches.filter(
+      (match) => match.request_id === request.id,
+    );
+    const requestJobs = jobs.filter((job) => job.request_id === request.id);
+
+    return (
+      !brief ||
+      !isBriefConfirmed(request, brief) ||
+      requestMatches.length === 0 ||
+      (request.status === "matched" && requestJobs.length === 0)
+    );
+  }).length;
+
+  const attentionRequests = requests.filter((request) => {
+    const brief = findBriefForRequest(briefs, request.id);
+    const requestMatches = matches.filter(
+      (match) => match.request_id === request.id,
+    );
+    const requestJobs = jobs.filter((job) => job.request_id === request.id);
+
+    return (
+      !brief ||
+      !isBriefConfirmed(request, brief) ||
+      requestMatches.length === 0 ||
+      (request.status === "matched" && requestJobs.length === 0)
+    );
+  });
 
   return (
     <DashboardShell
@@ -150,10 +216,11 @@ export default async function AdminRequestsPage() {
         />
 
         <MetricCard
-          label="AI briefs"
-          value={`${withBrief}`}
-          description="Request đã được AI chuẩn hóa"
-          icon={<Sparkles className="size-5" />}
+          label="Brief confirmed"
+          value={`${confirmedBriefs}/${withBrief}`}
+          description="Brief đã được customer chốt"
+          icon={<ShieldCheck className="size-5" />}
+          tone={confirmedBriefs > 0 ? "success" : "normal"}
         />
 
         <MetricCard
@@ -161,6 +228,7 @@ export default async function AdminRequestsPage() {
           value={`${withMatches}`}
           description="Request đã có designer matches"
           icon={<UsersRound className="size-5" />}
+          tone={withMatches > 0 ? "success" : "normal"}
         />
 
         <MetricCard
@@ -173,46 +241,73 @@ export default async function AdminRequestsPage() {
       </section>
 
       <section className="mt-5">
-        <SurfaceCard className="p-6">
-          <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr] xl:items-center">
-            <div>
-              <p className="text-sm font-black uppercase tracking-[0.22em] text-blue-600">
-                Request pipeline
-              </p>
+        <SurfaceCard className="overflow-hidden p-0">
+          <div className="bg-gradient-to-br from-[#061a3a] via-[#0b2a61] to-blue-700 p-6 text-white">
+            <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr] xl:items-center">
+              <div>
+                <p className="text-sm font-black uppercase tracking-[0.22em] text-sky-200/75">
+                  Request intelligence center
+                </p>
 
-              <h2 className="mt-3 text-3xl font-extrabold tracking-[-0.055em] text-[#061a3a]">
-                Luồng xử lý brief toàn hệ thống
-              </h2>
+                <h2 className="mt-3 text-3xl font-extrabold tracking-[-0.055em] text-white">
+                  Giám sát pipeline request → brief → matching → job
+                </h2>
 
-              <p className="mt-3 max-w-3xl text-sm font-medium leading-7 text-slate-600">
-                Admin dùng trang này để kiểm tra request nào đã có AI brief,
-                request nào đã matching designer, và request nào đã được chuyển
-                thành job thật.
-              </p>
+                <p className="mt-3 max-w-3xl text-sm font-medium leading-7 text-white/70">
+                  Admin dùng trang này để phát hiện request thiếu AI brief, brief
+                  chưa được customer xác nhận, chưa generate matching hoặc chưa
+                  được chuyển thành job.
+                </p>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <DarkSignalBox
+                  icon={<Sparkles className="size-4" />}
+                  label="Need AI brief"
+                  value={`${totalRequests - withBrief} request`}
+                />
+
+                <DarkSignalBox
+                  icon={<UsersRound className="size-4" />}
+                  label="Need matching"
+                  value={`${totalRequests - withMatches} request`}
+                />
+
+                <DarkSignalBox
+                  icon={<CircleDollarSign className="size-4" />}
+                  label="Job value"
+                  value={formatCurrencyVnd(totalJobValue)}
+                />
+              </div>
             </div>
+          </div>
 
-            <div className="grid gap-3 md:grid-cols-3">
-              <SignalBox
-                icon={<Sparkles className="size-4" />}
-                label="Need AI brief"
-                value={`${totalRequests - withBrief} request chưa có brief`}
-                tone={totalRequests - withBrief > 0 ? "warning" : "normal"}
-              />
+          <div className="grid gap-3 p-6 md:grid-cols-2 xl:grid-cols-4">
+            <SignalBox
+              icon={<Sparkles className="size-4" />}
+              label="AI brief"
+              value={`${withBrief}/${totalRequests} đã tạo brief`}
+            />
 
-              <SignalBox
-                icon={<UsersRound className="size-4" />}
-                label="Need matching"
-                value={`${totalRequests - withMatches} request chưa match`}
-                tone={totalRequests - withMatches > 0 ? "warning" : "normal"}
-              />
+            <SignalBox
+              icon={<ShieldCheck className="size-4" />}
+              label="Confirmed brief"
+              value={`${confirmedBriefs} brief đã chốt`}
+              tone={confirmedBriefs < withBrief ? "warning" : "normal"}
+            />
 
-              <SignalBox
-                icon={<Target className="size-4" />}
-                label="Need attention"
-                value={`${needsAttention} request cần kiểm tra`}
-                tone={needsAttention > 0 ? "warning" : "normal"}
-              />
-            </div>
+            <SignalBox
+              icon={<BriefcaseBusiness className="size-4" />}
+              label="Jobs"
+              value={`${activeJobs} active / ${completedJobs} done`}
+            />
+
+            <SignalBox
+              icon={<TriangleAlert className="size-4" />}
+              label="Need attention"
+              value={`${needsAttention} request cần kiểm tra`}
+              tone={needsAttention > 0 ? "warning" : "normal"}
+            />
           </div>
         </SurfaceCard>
       </section>
@@ -222,16 +317,71 @@ export default async function AdminRequestsPage() {
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
             <div>
               <p className="text-sm font-black uppercase tracking-[0.22em] text-blue-600">
-                Request list
+                Attention queue
               </p>
 
               <h2 className="mt-3 text-2xl font-extrabold tracking-[-0.045em] text-[#061a3a]">
-                Danh sách request
+                Request cần kiểm tra trước
               </h2>
 
               <p className="mt-3 max-w-2xl text-sm font-medium leading-7 text-slate-600">
-                Mỗi request hiển thị đủ trạng thái AI brief, matching và job để
-                admin nắm được tiến độ vận hành.
+                Ưu tiên các request thiếu brief, brief chưa chốt, chưa matching
+                hoặc đã matched nhưng chưa tạo job.
+              </p>
+            </div>
+
+            <StatusPill tone={needsAttention > 0 ? "warning" : "success"}>
+              {`${needsAttention} attention`}
+            </StatusPill>
+          </div>
+
+          {attentionRequests.length === 0 ? (
+            <EmptyState
+              title="Không có request cần xử lý."
+              description="Tất cả request hiện tại đều đã đi qua các bước chính của pipeline."
+            />
+          ) : (
+            <div className="mt-6 grid gap-4">
+              {attentionRequests.slice(0, 6).map((request) => {
+                const requestBrief = findBriefForRequest(briefs, request.id);
+                const requestMatches = matches.filter(
+                  (match) => match.request_id === request.id,
+                );
+                const requestJobs = jobs.filter(
+                  (job) => job.request_id === request.id,
+                );
+
+                return (
+                  <AdminRequestCard
+                    key={request.id}
+                    request={request}
+                    brief={requestBrief}
+                    matchCount={requestMatches.length}
+                    jobCount={requestJobs.length}
+                    highlight
+                  />
+                );
+              })}
+            </div>
+          )}
+        </SurfaceCard>
+      </section>
+
+      <section className="mt-5">
+        <SurfaceCard className="p-6">
+          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.22em] text-blue-600">
+                Request database
+              </p>
+
+              <h2 className="mt-3 text-2xl font-extrabold tracking-[-0.045em] text-[#061a3a]">
+                Toàn bộ request
+              </h2>
+
+              <p className="mt-3 max-w-2xl text-sm font-medium leading-7 text-slate-600">
+                Mỗi request hiển thị đủ trạng thái AI brief, brief confirmed,
+                matching và job để admin nắm được tiến độ vận hành.
               </p>
             </div>
 
@@ -245,22 +395,25 @@ export default async function AdminRequestsPage() {
             />
           ) : (
             <div className="mt-6 grid gap-4">
-              {requests.map((request) => (
-                <AdminRequestCard
-                  key={request.id}
-                  request={request}
-                  hasAiBrief={briefRequestIds.has(request.id)}
-                  hasMatches={matchedRequestIds.has(request.id)}
-                  hasJob={jobRequestIds.has(request.id)}
-                  matchCount={
-                    matches.filter((match) => match.request_id === request.id)
-                      .length
-                  }
-                  jobCount={
-                    jobs.filter((job) => job.request_id === request.id).length
-                  }
-                />
-              ))}
+              {requests.map((request) => {
+                const requestBrief = findBriefForRequest(briefs, request.id);
+                const requestMatches = matches.filter(
+                  (match) => match.request_id === request.id,
+                );
+                const requestJobs = jobs.filter(
+                  (job) => job.request_id === request.id,
+                );
+
+                return (
+                  <AdminRequestCard
+                    key={request.id}
+                    request={request}
+                    brief={requestBrief}
+                    matchCount={requestMatches.length}
+                    jobCount={requestJobs.length}
+                  />
+                );
+              })}
             </div>
           )}
         </SurfaceCard>
@@ -271,23 +424,35 @@ export default async function AdminRequestsPage() {
 
 function AdminRequestCard({
   request,
-  hasAiBrief,
-  hasMatches,
-  hasJob,
+  brief,
   matchCount,
   jobCount,
+  highlight = false,
 }: {
   request: RequestRow;
-  hasAiBrief: boolean;
-  hasMatches: boolean;
-  hasJob: boolean;
+  brief?: AiBriefRow;
   matchCount: number;
   jobCount: number;
+  highlight?: boolean;
 }) {
   const requestStatus = getRequestStatusView(request.status);
+  const briefConfirmed = isBriefConfirmed(request, brief);
+  const warnings = getRequestWarnings({
+    request,
+    brief,
+    briefConfirmed,
+    matchCount,
+    jobCount,
+  });
 
   return (
-    <div className="rounded-[1.35rem] border border-blue-100 bg-blue-50/65 p-5 transition hover:bg-blue-50">
+    <div
+      className={`rounded-[1.35rem] border p-5 transition ${
+        highlight
+          ? "border-amber-200 bg-amber-50"
+          : "border-blue-100 bg-blue-50/65 hover:bg-blue-50"
+      }`}
+    >
       <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -296,24 +461,28 @@ function AdminRequestCard({
             </StatusPill>
 
             <StatusPill tone="neutral">
-              {getCategoryLabel(
-                request.category as Parameters<typeof getCategoryLabel>[0],
-              )}
+              {getSafeCategoryLabel(request.category)}
             </StatusPill>
 
-            {hasAiBrief ? (
+            {brief ? (
               <StatusPill tone="success">Đã có AI brief</StatusPill>
             ) : (
               <StatusPill tone="warning">Chưa có AI brief</StatusPill>
             )}
 
-            {hasMatches ? (
+            {briefConfirmed ? (
+              <StatusPill tone="success">Brief đã chốt</StatusPill>
+            ) : (
+              <StatusPill tone="warning">Brief chưa chốt</StatusPill>
+            )}
+
+            {matchCount > 0 ? (
               <StatusPill tone="success">{`${matchCount} matches`}</StatusPill>
             ) : (
               <StatusPill tone="warning">Chưa match</StatusPill>
             )}
 
-            {hasJob ? (
+            {jobCount > 0 ? (
               <StatusPill tone="success">{`${jobCount} job`}</StatusPill>
             ) : (
               <StatusPill tone="neutral">Chưa tạo job</StatusPill>
@@ -348,9 +517,7 @@ function AdminRequestCard({
         <InfoBox
           icon={<Store className="size-4" />}
           label="Industry"
-          value={getIndustryLabel(
-            request.industry as Parameters<typeof getIndustryLabel>[0],
-          )}
+          value={getSafeIndustryLabel(request.industry)}
         />
 
         <InfoBox
@@ -368,19 +535,45 @@ function AdminRequestCard({
         />
 
         <InfoBox
-          icon={<FileText className="size-4" />}
-          label="Created"
-          value={formatDateVi(request.created_at)}
+          icon={<CheckCircle2 className="size-4" />}
+          label="Brief score"
+          value={
+            brief?.brief_completeness_score
+              ? `${brief.brief_completeness_score}/100`
+              : "Chưa có"
+          }
         />
       </div>
 
-      <div className="mt-5 flex flex-wrap gap-2">
-        {request.preferred_styles.map((style) => (
-          <StatusPill key={style} tone="neutral">
-            {getStyleLabel(style as Parameters<typeof getStyleLabel>[0])}
-          </StatusPill>
-        ))}
-      </div>
+      {request.preferred_styles && request.preferred_styles.length > 0 ? (
+        <div className="mt-5 flex flex-wrap gap-2">
+          {request.preferred_styles.map((style) => (
+            <StatusPill key={style} tone="neutral">
+              {getSafeStyleLabel(style)}
+            </StatusPill>
+          ))}
+        </div>
+      ) : null}
+
+      {warnings.length > 0 ? (
+        <div className="mt-5 rounded-[1.15rem] border border-amber-200 bg-white/80 p-4">
+          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-amber-700">
+            <TriangleAlert className="size-4" />
+            Admin warning
+          </div>
+
+          <div className="mt-3 grid gap-2">
+            {warnings.map((warning) => (
+              <p
+                key={warning}
+                className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold leading-6 text-amber-950"
+              >
+                {warning}
+              </p>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -500,6 +693,29 @@ function SignalBox({
   );
 }
 
+function DarkSignalBox({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-[1.15rem] border border-white/10 bg-white/10 p-4">
+      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-sky-200/75">
+        {icon}
+        {label}
+      </div>
+
+      <p className="mt-2 text-sm font-extrabold leading-6 text-white">
+        {value}
+      </p>
+    </div>
+  );
+}
+
 function InfoBox({
   icon,
   label,
@@ -547,6 +763,56 @@ function EmptyState({
   );
 }
 
+function findBriefForRequest(briefs: AiBriefRow[], requestId: string) {
+  return briefs.find(
+    (brief) =>
+      brief.request_id === requestId || brief.design_request_id === requestId,
+  );
+}
+
+function isBriefConfirmed(request: RequestRow, brief?: AiBriefRow) {
+  return (
+    request.brief_review_status === "confirmed" ||
+    Boolean(request.brief_confirmed_at) ||
+    brief?.status === "confirmed" ||
+    Boolean(brief?.confirmed_at)
+  );
+}
+
+function getRequestWarnings({
+  request,
+  brief,
+  briefConfirmed,
+  matchCount,
+  jobCount,
+}: {
+  request: RequestRow;
+  brief?: AiBriefRow;
+  briefConfirmed: boolean;
+  matchCount: number;
+  jobCount: number;
+}) {
+  const warnings: string[] = [];
+
+  if (!brief) {
+    warnings.push("Request chưa có AI brief.");
+  }
+
+  if (brief && !briefConfirmed) {
+    warnings.push("AI brief chưa có tín hiệu customer đã xác nhận.");
+  }
+
+  if (matchCount === 0) {
+    warnings.push("Request chưa có designer matching.");
+  }
+
+  if (request.status === "matched" && jobCount === 0) {
+    warnings.push("Request đã matched nhưng chưa tạo job.");
+  }
+
+  return warnings;
+}
+
 function getRequestStatusView(status: string) {
   if (status === "completed") {
     return {
@@ -558,6 +824,13 @@ function getRequestStatusView(status: string) {
   if (status === "matched") {
     return {
       label: "Đã matching",
+      tone: "success" as const,
+    };
+  }
+
+  if (status === "brief_confirmed") {
+    return {
+      label: "Brief đã chốt",
       tone: "success" as const,
     };
   }
@@ -580,4 +853,28 @@ function getRequestStatusView(status: string) {
     label: status,
     tone: "neutral" as const,
   };
+}
+
+function getSafeCategoryLabel(category: string) {
+  try {
+    return getCategoryLabel(category as Parameters<typeof getCategoryLabel>[0]);
+  } catch {
+    return category;
+  }
+}
+
+function getSafeIndustryLabel(industry: string) {
+  try {
+    return getIndustryLabel(industry as Parameters<typeof getIndustryLabel>[0]);
+  } catch {
+    return industry;
+  }
+}
+
+function getSafeStyleLabel(style: string) {
+  try {
+    return getStyleLabel(style as Parameters<typeof getStyleLabel>[0]);
+  } catch {
+    return style;
+  }
 }
