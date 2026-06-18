@@ -189,7 +189,7 @@ export default async function AdminPaymentsPage() {
   );
 
   const pendingPayments = payments.filter((payment) =>
-    ["pending", "waiting", "submitted", "waiting_transfer"].includes(
+    ["waiting_admin_confirm", "pending", "waiting", "submitted"].includes(
       payment.status,
     ),
   );
@@ -922,20 +922,33 @@ function EmptyState({
   );
 }
 
+
 function getPaymentStatusView(status: string) {
+  if (status === "waiting_transfer") {
+    return {
+      label: "Chờ customer chuyển khoản",
+      tone: "warning" as const,
+    };
+  }
+
+  if (status === "waiting_admin_confirm") {
+    return {
+      label: "Chờ admin xác nhận",
+      tone: "warning" as const,
+    };
+  }
+
+  if (["pending", "waiting", "submitted"].includes(status)) {
+    return {
+      label: "Chờ admin xác nhận",
+      tone: "warning" as const,
+    };
+  }
+
   if (["paid", "confirmed", "completed", "succeeded"].includes(status)) {
     return {
       label: "Đã xác nhận",
       tone: "success" as const,
-    };
-  }
-
-  if (
-    ["pending", "waiting", "submitted", "waiting_transfer"].includes(status)
-  ) {
-    return {
-      label: "Chờ xác nhận",
-      tone: "warning" as const,
     };
   }
 
@@ -951,6 +964,7 @@ function getPaymentStatusView(status: string) {
     tone: "neutral" as const,
   };
 }
+
 
 function getJobStatusView(status: string | null) {
   if (!status) {
@@ -977,6 +991,20 @@ function getJobStatusView(status: string | null) {
   if (status === "payment_pending") {
     return {
       label: "Job chờ payment",
+      tone: "warning" as const,
+    };
+  }
+
+  if (status === "reviewing") {
+    return {
+      label: "Job đang duyệt",
+      tone: "info" as const,
+    };
+  }
+
+  if (status === "disputed") {
+    return {
+      label: "Job tranh chấp",
       tone: "warning" as const,
     };
   }

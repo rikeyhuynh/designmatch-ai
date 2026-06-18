@@ -225,7 +225,9 @@ export default async function AdminDashboardPage() {
   ).length;
 
   const pendingPayments = payments.filter((payment) =>
-    ["waiting_transfer", "pending"].includes(payment.status),
+    ["waiting_admin_confirm", "pending", "waiting", "submitted"].includes(
+      payment.status,
+    ),
   );
 
   const confirmedPayments = payments.filter((payment) =>
@@ -1167,17 +1169,25 @@ function getSafeJobStatusMeta(status: string) {
   }
 }
 
+
 function getSafePaymentStatusMeta(status: string) {
   if (status === "waiting_transfer") {
     return {
-      label: "Chờ chuyển khoản",
+      label: "Chờ customer chuyển khoản",
       tone: "warning" as const,
     };
   }
 
-  if (status === "pending") {
+  if (status === "waiting_admin_confirm") {
     return {
-      label: "Chờ admin duyệt",
+      label: "Chờ admin xác nhận",
+      tone: "warning" as const,
+    };
+  }
+
+  if (["pending", "waiting", "submitted"].includes(status)) {
+    return {
+      label: "Chờ admin xác nhận",
       tone: "warning" as const,
     };
   }

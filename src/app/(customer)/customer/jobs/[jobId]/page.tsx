@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import {
   ArrowLeft,
@@ -34,6 +34,7 @@ import { CompleteJobButton } from "@/features/customer/jobs/components/complete-
 import { ConfirmTransferButton } from "@/features/customer/jobs/components/confirm-transfer-button";
 import { CreateJobReviewForm } from "@/features/customer/jobs/components/create-job-review-form";
 import { CreateUpdateFeedbackForm } from "@/features/customer/jobs/components/create-update-feedback-form";
+import { JobChatBox } from "@/features/jobs/chat/components/job-chat-box";
 import { requireRole } from "@/lib/auth/guards";
 import { formatCurrencyVnd, formatDateVi, formatPercent } from "@/lib/format";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -785,6 +786,11 @@ export default async function CustomerJobDetailPage({
         />
       </section>
 
+
+      <section className="mt-6">
+        <JobChatBox jobId={job.id} role="customer" />
+      </section>
+
       <section className="mt-6">
         <JobCreativeDirectionPanel
           concept={selectedConcept}
@@ -1260,9 +1266,9 @@ function CustomerBriefPanel({
 
                   {section.requirements.length > 0 ? (
                     <ul className="mt-3 grid gap-2">
-                      {section.requirements.map((item) => (
+                      {section.requirements.map((item, index) => (
                         <li
-                          key={item}
+                          key={`${String(item)}-${index}`}
                           className="flex gap-2 text-sm font-medium leading-6 text-slate-700"
                         >
                           <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
@@ -2064,9 +2070,9 @@ function ListBlock({
 
       {realItems.length > 0 ? (
         <div className="mt-3 grid gap-2">
-          {realItems.map((item) => (
+          {realItems.map((item, index) => (
             <div
-              key={item}
+              key={`${String(item)}-${index}`}
               className="rounded-2xl border border-blue-100 bg-white p-3 text-sm font-medium leading-6 text-slate-700"
             >
               {item}
@@ -2401,3 +2407,4 @@ function getUpdateTypeLabel(updateType: string) {
   if (updateType === "final") return "Bản hoàn thiện";
   return "Tiến độ";
 }
+

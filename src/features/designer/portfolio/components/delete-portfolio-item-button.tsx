@@ -12,6 +12,11 @@ type DeletePortfolioItemButtonProps = {
   portfolioTitle: string;
 };
 
+type DeletePortfolioResponse = {
+  message?: string;
+  dnaUpdated?: boolean;
+};
+
 export function DeletePortfolioItemButton({
   portfolioId,
   portfolioTitle,
@@ -21,7 +26,12 @@ export function DeletePortfolioItemButton({
 
   async function handleDelete() {
     const confirmed = window.confirm(
-      `Bạn có chắc muốn xóa portfolio "${portfolioTitle}" không?`,
+      [
+        `Bạn có chắc muốn xóa portfolio "${portfolioTitle}" không?`,
+        "",
+        "Style riêng của portfolio này sẽ bị xóa khỏi hệ thống.",
+        "Style DNA tổng hợp sẽ được cập nhật lại từ các portfolio còn lại.",
+      ].join("\n"),
     );
 
     if (!confirmed) return;
@@ -33,22 +43,38 @@ export function DeletePortfolioItemButton({
         method: "DELETE",
       });
 
-      const result = (await response.json()) as {
-        message?: string;
-      };
+      const result = (await response.json()) as DeletePortfolioResponse;
 
       if (!response.ok) {
         toast.error("Không thể xóa portfolio", {
-          description: result.message ?? "Unknown error",
+          description: result.message ?? "Đã có lỗi xảy ra.",
         });
+
         return;
       }
 
-      toast.success("Đã xóa portfolio", {
-        description: result.message,
-      });
+      if (result.dnaUpdated === false) {
+        toast.warning("Đã xóa portfolio nhưng Style DNA chưa cập nhật", {
+          description:
+            result.message ??
+            "Hãy tải lại trang hoặc phân tích lại portfolio còn lại.",
+        });
+      } else {
+        toast.success("Đã xóa portfolio", {
+          description:
+            result.message ??
+            "Style DNA đã được cập nhật lại từ các portfolio còn lại.",
+        });
+      }
 
       router.refresh();
+    } catch (error) {
+      toast.error("Không thể xóa portfolio", {
+        description:
+          error instanceof Error
+            ? error.message
+            : "Không thể kết nối đến hệ thống.",
+      });
     } finally {
       setIsDeleting(false);
     }

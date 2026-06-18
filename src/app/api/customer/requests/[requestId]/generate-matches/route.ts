@@ -385,81 +385,78 @@ export async function POST(_request: Request, context: RouteContext) {
     });
   }
 
-  const [
-    portfolioResult,
-    portfolioAnalysisResult,
-    designerStyleDNAResult,
-  ] = await Promise.all([
-    adminSupabase
-      .from("portfolio_items")
-      .select(
-        `
-        id,
-        designer_id,
-        title,
-        industry,
-        category,
-        image_url,
-        ai_analysis_status,
-        ai_style_tags,
-        ai_industry_tags,
-        ai_category_tags,
-        ai_visual_summary,
-        ai_confidence_score
-      `,
-      )
-      .in("designer_id", approvedDesignerIds),
+  const [portfolioResult, portfolioAnalysisResult, designerStyleDNAResult] =
+    await Promise.all([
+      adminSupabase
+        .from("portfolio_items")
+        .select(
+          `
+          id,
+          designer_id,
+          title,
+          industry,
+          category,
+          image_url,
+          ai_analysis_status,
+          ai_style_tags,
+          ai_industry_tags,
+          ai_category_tags,
+          ai_visual_summary,
+          ai_confidence_score
+        `,
+        )
+        .in("designer_id", approvedDesignerIds),
 
-    adminSupabase
-      .from("portfolio_ai_analysis")
-      .select(
-        `
-        portfolio_item_id,
-        designer_id,
-        designer_profile_id,
-        style_tags,
-        mood_tags,
-        industry_tags,
-        category_tags,
-        color_tags,
-        typography_tags,
-        layout_tags,
-        visual_strengths,
-        visual_summary,
-        confidence_score
-      `,
-      )
-      .or(
-        `designer_id.in.(${approvedDesignerIds.join(
-          ",",
-        )}),designer_profile_id.in.(${approvedDesignerIds.join(",")})`,
-      ),
+      adminSupabase
+        .from("portfolio_ai_analysis")
+        .select(
+          `
+          portfolio_item_id,
+          designer_id,
+          designer_profile_id,
+          style_tags,
+          mood_tags,
+          industry_tags,
+          category_tags,
+          color_tags,
+          typography_tags,
+          layout_tags,
+          visual_strengths,
+          visual_summary,
+          confidence_score
+        `,
+        )
+        .or(
+          `designer_id.in.(${approvedDesignerIds.join(
+            ",",
+          )}),designer_profile_id.in.(${approvedDesignerIds.join(",")})`,
+        ),
 
-    adminSupabase
-      .from("designer_style_dna")
-      .select(
-        `
-        designer_id,
-        designer_profile_id,
-        analyzed_portfolio_count,
-        style_tags,
-        industry_tags,
-        category_tags,
-        visual_strengths,
-        common_moods,
-        color_preferences,
-        typography_preferences,
-        layout_preferences,
-        dna_summary,
-        confidence_score
-      `,
-      )
-      .or(
-        `designer_id.in.(${approvedDesignerIds.join(
-          ",",
-        )}),designer_profile_id.in.(${approvedDesignerIds.join(",")})`,
-      ),
-  ]);
+      adminSupabase
+        .from("designer_style_dna")
+        .select(
+          `
+          designer_id,
+          designer_profile_id,
+          analyzed_portfolio_count,
+          style_tags,
+          industry_tags,
+          category_tags,
+          visual_strengths,
+          common_moods,
+          color_preferences,
+          typography_preferences,
+          layout_preferences,
+          dna_summary,
+          confidence_score
+        `,
+        )
+        .or(
+          `designer_id.in.(${approvedDesignerIds.join(
+            ",",
+          )}),designer_profile_id.in.(${approvedDesignerIds.join(",")})`,
+        ),
+    ]);
 
   if (portfolioResult.error) {
     return NextResponse.json(
@@ -488,8 +485,7 @@ export async function POST(_request: Request, context: RouteContext) {
     );
   }
 
-  const portfolioItems =
-    (portfolioResult.data ?? []) as unknown as PortfolioRow[];
+  const portfolioItems = (portfolioResult.data ?? []) as unknown as PortfolioRow[];
 
   const portfolioAnalyses =
     (portfolioAnalysisResult.data ?? []) as unknown as PortfolioAnalysisRow[];
@@ -498,19 +494,35 @@ export async function POST(_request: Request, context: RouteContext) {
     (designerStyleDNAResult.data ?? []) as unknown as DesignerStyleDNARow[];
 
   const candidateDesigners = approvedDesigners
-    .map((designer) => ({
-      designer,
-      preScore: scoreCandidateBeforeAI({
-        designer,
-        request,
-        finalBrief,
-        selectedConceptDirection,
-        portfolioItems: portfolioItems.filter(
-          (item) => item.designer_id === designer.id,
-        ),
+    .map((designer) => {
+      const designerPortfolioItems = portfolioItems.filter(
+        (item) => item.designer_id === designer.id,
+      );
+
+      const livePortfolioAnalyses = getLivePortfolioAnalyses({
+        portfolioItems: designerPortfolioItems,
+        portfolioAnalyses,
+        designerId: designer.id,
+      });
+
+      const designerDNA = normalizeDesignerDNA({
         dna: findDesignerDNA(designerStyleDNAs, designer.id),
-      }),
-    }))
+        portfolioItems: designerPortfolioItems,
+        portfolioAnalyses: livePortfolioAnalyses,
+      });
+
+      return {
+        designer,
+        preScore: scoreCandidateBeforeAI({
+          designer,
+          request,
+          finalBrief,
+          selectedConceptDirection,
+          portfolioItems: designerPortfolioItems,
+          dna: designerDNA,
+        }),
+      };
+    })
     .sort((a, b) => b.preScore - a.preScore)
     .slice(0, MAX_AI_CANDIDATES)
     .map((item) => item.designer);
@@ -523,20 +535,25 @@ export async function POST(_request: Request, context: RouteContext) {
       (item) => item.designer_id === designer.id,
     );
 
-    const designerPortfolioAnalyses = portfolioAnalyses.filter(
-      (item) =>
-        item.designer_id === designer.id ||
-        item.designer_profile_id === designer.id,
-    );
+    const livePortfolioAnalyses = getLivePortfolioAnalyses({
+      portfolioItems: designerPortfolioItems,
+      portfolioAnalyses,
+      designerId: designer.id,
+    });
 
     const portfolioEvidence = buildPortfolioEvidence({
       portfolioItems: designerPortfolioItems,
-      portfolioAnalyses: designerPortfolioAnalyses,
+      portfolioAnalyses: livePortfolioAnalyses,
+      request,
+      finalBrief,
+      selectedConceptDirection,
     });
 
-    const designerDNA = normalizeDesignerDNA(
-      findDesignerDNA(designerStyleDNAs, designer.id),
-    );
+    const designerDNA = normalizeDesignerDNA({
+      dna: findDesignerDNA(designerStyleDNAs, designer.id),
+      portfolioItems: designerPortfolioItems,
+      portfolioAnalyses: livePortfolioAnalyses,
+    });
 
     try {
       const aiMatch = await scoreDesignerBriefMatchWithAI({
@@ -663,7 +680,7 @@ export async function POST(_request: Request, context: RouteContext) {
     return NextResponse.json(
       {
         message:
-          "AI 100% chưa tạo được designer matches vì tất cả lần chấm điểm AI đều lỗi hoặc trả điểm không hợp lệ. Hãy kiểm tra log terminal phần AI designer portfolio match failed.",
+          "AI chưa tạo được designer matches vì tất cả lần chấm điểm đều lỗi hoặc trả điểm không hợp lệ. Hãy kiểm tra log terminal phần AI designer portfolio match failed.",
         matches: [],
         ai_failed_designer_ids: aiFailedDesignerIds,
       },
@@ -713,19 +730,16 @@ export async function POST(_request: Request, context: RouteContext) {
   return NextResponse.json({
     message:
       selectedConceptDirection && visualConceptPreview
-        ? "Đã tạo designer matches 100% bằng AI dựa trên brief đã chốt, concept đã chọn, visual preview, portfolio analysis và Designer Style DNA."
+        ? "Đã tạo designer matches bằng AI dựa trên brief đã chốt, concept đã chọn, visual preview, portfolio analysis và Designer Style DNA."
         : selectedConceptDirection
-          ? "Đã tạo designer matches 100% bằng AI dựa trên brief đã chốt, concept đã chọn, portfolio analysis và Designer Style DNA."
-          : "Đã tạo designer matches 100% bằng AI dựa trên brief đã chốt, portfolio analysis và Designer Style DNA.",
+          ? "Đã tạo designer matches bằng AI dựa trên brief đã chốt, concept đã chọn, portfolio analysis và Designer Style DNA."
+          : "Đã tạo designer matches bằng AI dựa trên brief đã chốt, portfolio analysis và Designer Style DNA.",
     matches: insertedMatches ?? [],
     ai_failed_designer_ids: aiFailedDesignerIds,
   });
 }
 
-async function loadSelectedConceptContext(
-  adminSupabase: any,
-  requestId: string,
-) {
+async function loadSelectedConceptContext(adminSupabase: any, requestId: string) {
   const { data: selectedConceptData, error: selectedConceptQueryError } =
     await adminSupabase
       .from("ai_concept_directions")
@@ -950,25 +964,99 @@ function normalizeDesignerProfile(
   };
 }
 
-function normalizeDesignerDNA(
-  dna: DesignerStyleDNARow | null,
-): DesignerStyleDNAForAIMatch | null {
-  if (!dna) {
+function normalizeDesignerDNA({
+  dna,
+  portfolioItems,
+  portfolioAnalyses,
+}: {
+  dna: DesignerStyleDNARow | null;
+  portfolioItems: PortfolioRow[];
+  portfolioAnalyses: PortfolioAnalysisRow[];
+}): DesignerStyleDNAForAIMatch | null {
+  const analyzedPortfolioItems = portfolioItems.filter((item) =>
+    ["completed", "success"].includes(item.ai_analysis_status ?? ""),
+  );
+
+  const styleTags = uniqueTags([
+    ...portfolioAnalyses.flatMap((item) => item.style_tags ?? []),
+    ...analyzedPortfolioItems.flatMap((item) => item.ai_style_tags ?? []),
+    ...(dna?.style_tags ?? []),
+  ]);
+
+  const industryTags = uniqueTags([
+    ...portfolioAnalyses.flatMap((item) => item.industry_tags ?? []),
+    ...analyzedPortfolioItems.flatMap((item) => item.ai_industry_tags ?? []),
+    ...(dna?.industry_tags ?? []),
+  ]);
+
+  const categoryTags = uniqueTags([
+    ...portfolioAnalyses.flatMap((item) => item.category_tags ?? []),
+    ...analyzedPortfolioItems.flatMap((item) => item.ai_category_tags ?? []),
+    ...(dna?.category_tags ?? []),
+  ]);
+
+  const visualStrengths = uniqueTags([
+    ...portfolioAnalyses.flatMap((item) => item.visual_strengths ?? []),
+    ...(dna?.visual_strengths ?? []),
+  ]);
+
+  const commonMoods = uniqueTags([
+    ...portfolioAnalyses.flatMap((item) => item.mood_tags ?? []),
+    ...(dna?.common_moods ?? []),
+  ]);
+
+  const colorPreferences = uniqueTags([
+    ...portfolioAnalyses.flatMap((item) => item.color_tags ?? []),
+    ...(dna?.color_preferences ?? []),
+  ]);
+
+  const typographyPreferences = uniqueTags([
+    ...portfolioAnalyses.flatMap((item) => item.typography_tags ?? []),
+    ...(dna?.typography_preferences ?? []),
+  ]);
+
+  const layoutPreferences = uniqueTags([
+    ...portfolioAnalyses.flatMap((item) => item.layout_tags ?? []),
+    ...(dna?.layout_preferences ?? []),
+  ]);
+
+  const confidenceValues = [
+    ...portfolioAnalyses.map((item) => Number(item.confidence_score ?? 0)),
+    ...analyzedPortfolioItems.map((item) =>
+      Number(item.ai_confidence_score ?? 0),
+    ),
+  ].filter((score) => Number.isFinite(score) && score > 0);
+
+  const confidenceScore =
+    confidenceValues.length > 0
+      ? Math.round(
+          confidenceValues.reduce((total, score) => total + score, 0) /
+            confidenceValues.length,
+        )
+      : Number(dna?.confidence_score ?? 0);
+
+  if (
+    !dna &&
+    analyzedPortfolioItems.length === 0 &&
+    styleTags.length === 0 &&
+    industryTags.length === 0 &&
+    categoryTags.length === 0
+  ) {
     return null;
   }
 
   return {
-    analyzed_portfolio_count: Number(dna.analyzed_portfolio_count ?? 0),
-    style_tags: dna.style_tags ?? [],
-    industry_tags: dna.industry_tags ?? [],
-    category_tags: dna.category_tags ?? [],
-    visual_strengths: dna.visual_strengths ?? [],
-    common_moods: dna.common_moods ?? [],
-    color_preferences: dna.color_preferences ?? [],
-    typography_preferences: dna.typography_preferences ?? [],
-    layout_preferences: dna.layout_preferences ?? [],
-    dna_summary: dna.dna_summary,
-    confidence_score: Number(dna.confidence_score ?? 0),
+    analyzed_portfolio_count: analyzedPortfolioItems.length,
+    style_tags: styleTags,
+    industry_tags: industryTags,
+    category_tags: categoryTags,
+    visual_strengths: visualStrengths,
+    common_moods: commonMoods,
+    color_preferences: colorPreferences,
+    typography_preferences: typographyPreferences,
+    layout_preferences: layoutPreferences,
+    dna_summary: dna?.dna_summary ?? null,
+    confidence_score: confidenceScore,
   };
 }
 
@@ -982,14 +1070,61 @@ function findDesignerDNA(rows: DesignerStyleDNARow[], designerId: string) {
   );
 }
 
-function buildPortfolioEvidence({
+function getLivePortfolioAnalyses({
   portfolioItems,
   portfolioAnalyses,
+  designerId,
 }: {
   portfolioItems: PortfolioRow[];
   portfolioAnalyses: PortfolioAnalysisRow[];
+  designerId: string;
+}) {
+  const livePortfolioIds = new Set(portfolioItems.map((item) => item.id));
+
+  return portfolioAnalyses.filter((item) => {
+    const belongsToDesigner =
+      item.designer_id === designerId || item.designer_profile_id === designerId;
+
+    const belongsToLivePortfolio =
+      Boolean(item.portfolio_item_id) &&
+      livePortfolioIds.has(String(item.portfolio_item_id));
+
+    return belongsToDesigner && belongsToLivePortfolio;
+  });
+}
+
+function buildPortfolioEvidence({
+  portfolioItems,
+  portfolioAnalyses,
+  request,
+  finalBrief,
+  selectedConceptDirection,
+}: {
+  portfolioItems: PortfolioRow[];
+  portfolioAnalyses: PortfolioAnalysisRow[];
+  request: DesignRequestRow;
+  finalBrief: FinalBriefForAIMatch;
+  selectedConceptDirection: SelectedConceptForAIMatch | null;
 }): PortfolioEvidenceForAIMatch[] {
-  return portfolioItems.slice(0, 8).map((portfolioItem) => {
+  const sortedPortfolioItems = [...portfolioItems].sort((a, b) => {
+    const bScore = scorePortfolioEvidenceItem({
+      item: b,
+      request,
+      finalBrief,
+      selectedConceptDirection,
+    });
+
+    const aScore = scorePortfolioEvidenceItem({
+      item: a,
+      request,
+      finalBrief,
+      selectedConceptDirection,
+    });
+
+    return bScore - aScore;
+  });
+
+  return sortedPortfolioItems.slice(0, 8).map((portfolioItem) => {
     const analysis = portfolioAnalyses.find(
       (item) => item.portfolio_item_id === portfolioItem.id,
     );
@@ -1002,8 +1137,7 @@ function buildPortfolioEvidence({
       image_url: portfolioItem.image_url,
       ai_visual_summary:
         analysis?.visual_summary ?? portfolioItem.ai_visual_summary,
-      ai_style_tags:
-        analysis?.style_tags ?? portfolioItem.ai_style_tags ?? [],
+      ai_style_tags: analysis?.style_tags ?? portfolioItem.ai_style_tags ?? [],
       ai_mood_tags: analysis?.mood_tags ?? [],
       ai_industry_tags:
         analysis?.industry_tags ?? portfolioItem.ai_industry_tags ?? [],
@@ -1018,6 +1152,62 @@ function buildPortfolioEvidence({
       ),
     };
   });
+}
+
+function scorePortfolioEvidenceItem({
+  item,
+  request,
+  finalBrief,
+  selectedConceptDirection,
+}: {
+  item: PortfolioRow;
+  request: DesignRequestRow;
+  finalBrief: FinalBriefForAIMatch;
+  selectedConceptDirection: SelectedConceptForAIMatch | null;
+}) {
+  let score = 0;
+
+  if (["completed", "success"].includes(item.ai_analysis_status ?? "")) {
+    score += 25;
+  }
+
+  if (item.industry === request.industry) {
+    score += 25;
+  }
+
+  if (item.category === request.category) {
+    score += 25;
+  }
+
+  const portfolioTags = [
+    ...(item.ai_style_tags ?? []),
+    ...(item.ai_industry_tags ?? []),
+    ...(item.ai_category_tags ?? []),
+  ];
+
+  const requestTags = [
+    ...(request.preferred_styles ?? []),
+    ...finalBrief.visual_direction.mood,
+    ...finalBrief.visual_direction.style_tags,
+    ...finalBrief.visual_direction.color_direction,
+    finalBrief.visual_direction.typography_direction,
+    finalBrief.visual_direction.layout_direction,
+    finalBrief.visual_direction.image_direction,
+    ...(selectedConceptDirection?.mood_tags ?? []),
+    ...(selectedConceptDirection?.style_tags ?? []),
+    ...(selectedConceptDirection?.best_for ?? []),
+    selectedConceptDirection?.typography_direction ?? "",
+    selectedConceptDirection?.layout_direction ?? "",
+    selectedConceptDirection?.image_direction ?? "",
+  ].filter(Boolean);
+
+  const tagHits = portfolioTags.filter((portfolioTag) =>
+    requestTags.some((requestTag) => isLooseTextMatch(portfolioTag, requestTag)),
+  ).length;
+
+  score += Math.min(tagHits * 5, 25);
+
+  return score;
 }
 
 function buildDesignerMatchReasons({
@@ -1041,11 +1231,11 @@ function buildDesignerMatchReasons({
   visualConceptPreview: VisualConceptPreviewForAIMatch | null;
 }) {
   const reasons = [
-    `AI match score: ${aiResult.match_score}/100.`,
+    `Match score: ${aiResult.match_score}/100.`,
     `Portfolio fit: ${aiResult.portfolio_fit_score}/100.`,
     `Style fit: ${aiResult.style_fit_score}/100.`,
     `Vibe fit: ${aiResult.vibe_fit_score}/100.`,
-    `Industry/context fit: ${aiResult.industry_context_fit_score}/100.`,
+    `Industry fit: ${aiResult.industry_context_fit_score}/100.`,
     `Budget fit: ${aiResult.budget_fit_score}/100.`,
   ];
 
@@ -1061,7 +1251,7 @@ function buildDesignerMatchReasons({
 
   if (aiResult.not_same_style_but_same_vibe) {
     reasons.push(
-      "Không trùng phong cách trực tiếp nhưng có cùng hơi hướng thị giác với brief/concept.",
+      "Designer không trùng style trực tiếp hoàn toàn nhưng có cùng vibe thị giác với brief/concept.",
     );
   }
 
@@ -1112,11 +1302,12 @@ function scoreCandidateBeforeAI({
   finalBrief: FinalBriefForAIMatch;
   selectedConceptDirection: SelectedConceptForAIMatch | null;
   portfolioItems: PortfolioRow[];
-  dna: DesignerStyleDNARow | null;
+  dna: DesignerStyleDNAForAIMatch | null;
 }) {
   let score = 0;
 
   if (designer.verification_status === "approved") score += 30;
+
   if (designer.availability === "available" || designer.availability === "open") {
     score += 15;
   }
@@ -1125,10 +1316,15 @@ function scoreCandidateBeforeAI({
     Number(designer.minimum_project_budget_vnd ?? 0) <=
     Number(request.budget_max_vnd ?? 0)
   ) {
-    score += 10;
+    score += 12;
   }
 
-  score += Math.min(portfolioItems.length * 3, 18);
+  const analyzedPortfolioItems = portfolioItems.filter((item) =>
+    ["completed", "success"].includes(item.ai_analysis_status ?? ""),
+  );
+
+  score += Math.min(portfolioItems.length * 2, 12);
+  score += Math.min(analyzedPortfolioItems.length * 4, 20);
 
   const categoryMatches = portfolioItems.filter(
     (item) => item.category === request.category,
@@ -1138,8 +1334,8 @@ function scoreCandidateBeforeAI({
     (item) => item.industry === request.industry,
   ).length;
 
-  score += Math.min(categoryMatches * 5, 15);
-  score += Math.min(industryMatches * 5, 15);
+  score += Math.min(categoryMatches * 7, 21);
+  score += Math.min(industryMatches * 7, 21);
 
   const dnaKeywords = [
     ...(dna?.style_tags ?? []),
@@ -1147,9 +1343,14 @@ function scoreCandidateBeforeAI({
     ...(dna?.color_preferences ?? []),
     ...(dna?.layout_preferences ?? []),
     ...(dna?.visual_strengths ?? []),
+    ...(dna?.industry_tags ?? []),
+    ...(dna?.category_tags ?? []),
   ];
 
   const briefKeywords = [
+    ...(request.preferred_styles ?? []),
+    request.industry,
+    request.category,
     ...finalBrief.visual_direction.mood,
     ...finalBrief.visual_direction.style_tags,
     ...finalBrief.visual_direction.color_direction,
@@ -1173,8 +1374,7 @@ function scoreCandidateBeforeAI({
     ),
   ).length;
 
-  score += Math.min(keywordHits * 4, 24);
-
+  score += Math.min(keywordHits * 4, 28);
   score += Math.min(Number(designer.rating ?? 0) * 2, 10);
   score += Math.min(Number(designer.completed_jobs ?? 0) * 2, 10);
 
@@ -1203,6 +1403,23 @@ function normalizeText(value: string) {
     .replace(/đ/g, "d")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+function uniqueTags(items: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const item of items) {
+    const trimmed = stringValue(item);
+    const key = normalizeText(trimmed);
+
+    if (!trimmed || seen.has(key)) continue;
+
+    seen.add(key);
+    result.push(trimmed);
+  }
+
+  return result;
 }
 
 function asRecord(value: unknown): Record<string, any> {

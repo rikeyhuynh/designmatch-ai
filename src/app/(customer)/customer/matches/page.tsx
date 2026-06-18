@@ -5,15 +5,19 @@ import {
   Award,
   BriefcaseBusiness,
   CheckCircle2,
+  CircleAlert,
   Clock3,
   FileText,
+  Gauge,
   ImageIcon,
   LayoutTemplate,
   Palette,
   Sparkles,
   Star,
   Store,
+  Tags,
   Target,
+  Type,
   UserRound,
   UsersRound,
 } from "lucide-react";
@@ -25,7 +29,7 @@ import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { Button } from "@/components/ui/button";
 import { SelectDesignerButton } from "@/features/customer/matches/components/select-designer-button";
 import { requireRole } from "@/lib/auth/guards";
-import { getCategoryLabel } from "@/lib/domain/labels";
+import { getCategoryLabel, getIndustryLabel } from "@/lib/domain/labels";
 import { formatDateVi } from "@/lib/format";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -38,6 +42,7 @@ type RequestRow = {
   title: string;
   business_name: string;
   category: string;
+  industry?: string | null;
   status: string;
   created_at: string;
 };
@@ -60,6 +65,34 @@ type DesignerRow = {
   response_time_hours: number;
   availability: string | null;
   verification_status: string | null;
+};
+
+type DesignerStyleDnaRow = {
+  designer_id: string | null;
+  designer_profile_id: string | null;
+  analyzed_portfolio_count: number | null;
+  style_tags: string[] | null;
+  industry_tags: string[] | null;
+  category_tags: string[] | null;
+  visual_strengths: string[] | null;
+  common_moods: string[] | null;
+  color_preferences: string[] | null;
+  typography_preferences: string[] | null;
+  layout_preferences: string[] | null;
+  dna_summary: string | null;
+  confidence_score: number | null;
+};
+
+type PortfolioEvidenceRow = {
+  id: string;
+  designer_id: string;
+  title: string;
+  category: string;
+  industry: string | null;
+  image_url: string | null;
+  ai_style_tags: string[] | null;
+  ai_visual_summary: string | null;
+  ai_confidence_score: number | null;
 };
 
 type JobRow = {
@@ -148,7 +181,17 @@ export default async function CustomerMatchesPage({
 
   let requestsQuery = adminSupabase
     .from("design_requests")
-    .select("id, title, business_name, category, status, created_at")
+    .select(
+      `
+      id,
+      title,
+      business_name,
+      category,
+      industry,
+      status,
+      created_at
+    `,
+    )
     .eq("customer_id", customerProfile.id)
     .order("created_at", { ascending: false });
 
@@ -157,7 +200,6 @@ export default async function CustomerMatchesPage({
   }
 
   const requestsResult = await requestsQuery;
-
   const requests = (requestsResult.data ?? []) as unknown as RequestRow[];
   const requestIds = requests.map((request) => request.id);
 
@@ -185,31 +227,45 @@ export default async function CustomerMatchesPage({
     new Set(matches.map((match) => match.designer_id)),
   );
 
-  const designersResult =
+  const matchedPortfolioIds = Array.from(
+    new Set(matches.flatMap((match) => match.matched_portfolio_ids ?? [])),
+  );
+
+  const [
+    designersResult,
+    jobsResult,
+    aiMatchScoresResult,
+    selectedConceptsResult,
+    portfolioEvidenceResult,
+    designerStyleDnaResult,
+  ] = await Promise.all([
     designerIds.length > 0
-      ? await adminSupabase
+      ? adminSupabase
           .from("designer_profiles")
           .select(
-            "id, display_name, headline, rating, completed_jobs, response_time_hours, availability, verification_status",
+            `
+            id,
+            display_name,
+            headline,
+            rating,
+            completed_jobs,
+            response_time_hours,
+            availability,
+            verification_status
+          `,
           )
           .in("id", designerIds)
-      : { data: [], error: null };
+      : Promise.resolve({ data: [], error: null }),
 
-  const designers = (designersResult.data ?? []) as unknown as DesignerRow[];
-
-  const jobsResult =
     requestIds.length > 0
-      ? await adminSupabase
+      ? adminSupabase
           .from("jobs")
           .select("id, request_id, designer_id, status")
           .in("request_id", requestIds)
-      : { data: [], error: null };
+      : Promise.resolve({ data: [], error: null }),
 
-  const jobs = (jobsResult.data ?? []) as unknown as JobRow[];
-
-  const aiMatchScoresResult =
     requestIds.length > 0
-      ? await adminSupabase
+      ? adminSupabase
           .from("ai_designer_match_scores")
           .select(
             `
@@ -227,14 +283,10 @@ export default async function CustomerMatchesPage({
           `,
           )
           .in("request_id", requestIds)
-      : { data: [], error: null };
+      : Promise.resolve({ data: [], error: null }),
 
-  const aiMatchScores =
-    (aiMatchScoresResult.data ?? []) as unknown as AiDesignerMatchScoreRow[];
-
-  const selectedConceptsResult =
     requestIds.length > 0
-      ? await adminSupabase
+      ? adminSupabase
           .from("ai_concept_directions")
           .select(
             `
@@ -254,10 +306,65 @@ export default async function CustomerMatchesPage({
           )
           .in("design_request_id", requestIds)
           .eq("is_selected", true)
-      : { data: [], error: null };
+      : Promise.resolve({ data: [], error: null }),
 
+    matchedPortfolioIds.length > 0
+      ? adminSupabase
+          .from("portfolio_items")
+          .select(
+            `
+            id,
+            designer_id,
+            title,
+            category,
+            industry,
+            image_url,
+            ai_style_tags,
+            ai_visual_summary,
+            ai_confidence_score
+          `,
+          )
+          .in("id", matchedPortfolioIds)
+      : Promise.resolve({ data: [], error: null }),
+
+    designerIds.length > 0
+      ? adminSupabase
+          .from("designer_style_dna")
+          .select(
+            `
+            designer_id,
+            designer_profile_id,
+            analyzed_portfolio_count,
+            style_tags,
+            industry_tags,
+            category_tags,
+            visual_strengths,
+            common_moods,
+            color_preferences,
+            typography_preferences,
+            layout_preferences,
+            dna_summary,
+            confidence_score
+          `,
+          )
+          .or(
+            `designer_id.in.(${designerIds.join(
+              ",",
+            )}),designer_profile_id.in.(${designerIds.join(",")})`,
+          )
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  const designers = (designersResult.data ?? []) as unknown as DesignerRow[];
+  const jobs = (jobsResult.data ?? []) as unknown as JobRow[];
+  const aiMatchScores =
+    (aiMatchScoresResult.data ?? []) as unknown as AiDesignerMatchScoreRow[];
   const selectedConcepts =
     (selectedConceptsResult.data ?? []) as unknown as SelectedConceptRow[];
+  const portfolioEvidenceItems =
+    (portfolioEvidenceResult.data ?? []) as unknown as PortfolioEvidenceRow[];
+  const designerStyleDnas =
+    (designerStyleDnaResult.data ?? []) as unknown as DesignerStyleDnaRow[];
 
   const selectedConceptIds = selectedConcepts.map((concept) => concept.id);
 
@@ -313,7 +420,7 @@ export default async function CustomerMatchesPage({
     <DashboardShell
       role="customer"
       title="Designer match"
-      description="Xem điểm match và lý do hệ thống đề xuất designer cho từng brief."
+      description="Xem điểm match, lý do đề xuất và Style DNA của designer cho từng brief."
       userName={profile.full_name}
       userEmail={authState.userEmail}
     >
@@ -326,6 +433,8 @@ export default async function CustomerMatchesPage({
           aiMatchScoresResult.error?.message,
           selectedConceptsResult.error?.message,
           conceptPreviewsResult.error?.message,
+          portfolioEvidenceResult.error?.message,
+          designerStyleDnaResult.error?.message,
         ]}
       />
 
@@ -380,8 +489,8 @@ export default async function CustomerMatchesPage({
 
               <p className="mt-3 max-w-3xl text-sm font-medium leading-7 text-slate-600">
                 Mỗi designer được đề xuất dựa trên brief đã chốt, concept
-                direction khách hàng đã chọn, visual preview, portfolio analysis,
-                Designer Style DNA, rating, khả năng phản hồi và mức budget.
+                direction đã chọn, visual preview, portfolio analysis, Designer
+                Style DNA, rating, tốc độ phản hồi và mức độ phù hợp budget.
               </p>
 
               <div className="mt-5 flex flex-wrap gap-3">
@@ -450,8 +559,9 @@ export default async function CustomerMatchesPage({
 
               <p className="mt-3 max-w-2xl text-sm font-medium leading-7 text-slate-600">
                 Designer có điểm càng cao thì càng phù hợp với brief và concept
-                hiện tại. Lý do match giúp bạn hiểu designer hợp ở mood, style,
-                layout, typography, portfolio evidence và rủi ro nào cần lưu ý.
+                hiện tại. Lý do match được tách thành từng dòng để bạn dễ xem
+                designer hợp ở mood, style, layout, typography, portfolio
+                evidence và rủi ro cần lưu ý.
               </p>
             </div>
 
@@ -476,7 +586,7 @@ export default async function CustomerMatchesPage({
           ) : requestsWithMatches.length === 0 ? (
             <EmptyState
               title="Chưa có designer match."
-              description="Hãy mở request đã tạo, chọn concept, tạo visual preview rồi bấm “Tiếp tục chọn designer” để AI đề xuất designer."
+              description="Hãy mở request đã tạo, chốt brief, chọn concept, tạo visual preview rồi bấm tiếp tục chọn designer để AI đề xuất designer."
               href={
                 selectedRequestId
                   ? `/customer/requests/${selectedRequestId}`
@@ -520,6 +630,8 @@ export default async function CustomerMatchesPage({
                     aiMatchScores={aiMatchScores}
                     selectedConcept={selectedConcept}
                     selectedPreview={selectedPreview}
+                    designerStyleDnas={designerStyleDnas}
+                    portfolioEvidenceItems={portfolioEvidenceItems}
                   />
                 );
               })}
@@ -539,6 +651,8 @@ function RequestMatchGroup({
   aiMatchScores,
   selectedConcept,
   selectedPreview,
+  designerStyleDnas,
+  portfolioEvidenceItems,
 }: {
   request: RequestRow;
   matches: MatchRow[];
@@ -547,6 +661,8 @@ function RequestMatchGroup({
   aiMatchScores: AiDesignerMatchScoreRow[];
   selectedConcept: SelectedConceptRow | null;
   selectedPreview: ConceptPreviewRow | null;
+  designerStyleDnas: DesignerStyleDnaRow[];
+  portfolioEvidenceItems: PortfolioEvidenceRow[];
 }) {
   const bestScore =
     matches.length > 0
@@ -581,7 +697,7 @@ function RequestMatchGroup({
             ) : null}
           </div>
 
-          <h3 className="mt-4 text-2xl font-extrabold tracking-[-0.045em] text-[#061a3a]">
+          <h3 className="mt-4 break-words text-2xl font-extrabold tracking-[-0.045em] text-[#061a3a]">
             {request.title}
           </h3>
 
@@ -606,10 +722,7 @@ function RequestMatchGroup({
       </div>
 
       {selectedConcept ? (
-        <RequestConceptContext
-          concept={selectedConcept}
-          preview={selectedPreview}
-        />
+        <RequestConceptContext concept={selectedConcept} preview={selectedPreview} />
       ) : null}
 
       <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -631,6 +744,16 @@ function RequestMatchGroup({
                 score.designer_id === match.designer_id,
             ) ?? null;
 
+          const designerDna = designer
+            ? findDesignerDna(designerStyleDnas, designer.id)
+            : null;
+
+          const matchedPortfolioItems = portfolioEvidenceItems.filter(
+            (item) =>
+              item.designer_id === match.designer_id &&
+              (match.matched_portfolio_ids ?? []).includes(item.id),
+          );
+
           return (
             <DesignerMatchCard
               key={match.id}
@@ -638,6 +761,8 @@ function RequestMatchGroup({
               requestId={request.id}
               match={match}
               designer={designer}
+              designerDna={designerDna}
+              matchedPortfolioItems={matchedPortfolioItems}
               hasJob={Boolean(jobForDesigner)}
               jobId={jobForDesigner?.id}
               requestAlreadyHasJob={requestAlreadyHasJob}
@@ -670,7 +795,7 @@ function RequestConceptContext({
             ) : null}
           </div>
 
-          <h4 className="mt-3 text-xl font-extrabold tracking-[-0.04em] text-[#061a3a]">
+          <h4 className="mt-3 break-words text-xl font-extrabold tracking-[-0.04em] text-[#061a3a]">
             {concept.concept_name ?? "Concept đã chọn"}
           </h4>
 
@@ -684,17 +809,13 @@ function RequestConceptContext({
             <MiniInfo
               icon={<Palette className="size-4" />}
               label="Mood"
-              value={
-                (concept.mood_tags ?? []).slice(0, 4).join(", ") || "Chưa rõ"
-              }
+              value={formatList(concept.mood_tags ?? [], "Chưa rõ")}
             />
 
             <MiniInfo
               icon={<LayoutTemplate className="size-4" />}
               label="Style"
-              value={
-                (concept.style_tags ?? []).slice(0, 4).join(", ") || "Chưa rõ"
-              }
+              value={formatList(concept.style_tags ?? [], "Chưa rõ")}
             />
 
             <MiniInfo
@@ -759,6 +880,8 @@ function DesignerMatchCard({
   requestId,
   match,
   designer,
+  designerDna,
+  matchedPortfolioItems,
   hasJob,
   jobId,
   requestAlreadyHasJob,
@@ -768,6 +891,8 @@ function DesignerMatchCard({
   requestId: string;
   match: MatchRow;
   designer?: DesignerRow;
+  designerDna: DesignerStyleDnaRow | null;
+  matchedPortfolioItems: PortfolioEvidenceRow[];
   hasJob: boolean;
   jobId?: string;
   requestAlreadyHasJob: boolean;
@@ -787,7 +912,7 @@ function DesignerMatchCard({
   const matchReasons = match.match_reasons ?? [];
 
   return (
-    <div className="rounded-[1.2rem] border border-blue-100 bg-white p-5">
+    <div className="rounded-[1.2rem] border border-blue-100 bg-white p-5 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
       <div className="flex items-start gap-4">
         <div className="grid size-12 shrink-0 place-items-center rounded-2xl bg-blue-50 text-blue-700 ring-1 ring-blue-100">
           <UserRound className="size-5" />
@@ -806,7 +931,7 @@ function DesignerMatchCard({
             </StatusPill>
           </div>
 
-          <h4 className="mt-3 text-lg font-extrabold tracking-[-0.035em] text-[#061a3a]">
+          <h4 className="mt-3 break-words text-lg font-extrabold tracking-[-0.035em] text-[#061a3a]">
             {designer.display_name}
           </h4>
 
@@ -838,76 +963,20 @@ function DesignerMatchCard({
 
       {aiMatchContext ? <AIFitBreakdown context={aiMatchContext} /> : null}
 
-      <div className="mt-5 rounded-[1.1rem] border border-blue-100 bg-blue-50/65 p-4">
-        <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-blue-600">
-          <Sparkles className="size-4" />
-          Lý do đề xuất
-        </div>
+      <DesignerDnaPanel dna={designerDna} />
 
-        {matchReasons.length > 0 ? (
-          <ul className="mt-3 grid gap-2">
-            {matchReasons.slice(0, 8).map((reason) => (
-              <li
-                key={reason}
-                className="flex gap-2 text-sm font-medium leading-6 text-slate-700"
-              >
-                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
-                <span>{reason}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-3 text-sm font-medium leading-7 text-slate-500">
-            Match này được tạo trước khi hệ thống lưu lý do đề xuất. Hãy tạo
-            matching lại để cập nhật dữ liệu.
-          </p>
-        )}
-      </div>
+      <ReasonPanel reasons={matchReasons} />
 
-      {aiMatchContext?.matched_portfolio_evidence.length ? (
-        <div className="mt-5 rounded-[1.1rem] border border-emerald-100 bg-emerald-50/70 p-4">
-          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-emerald-700">
-            <BriefcaseBusiness className="size-4" />
-            Portfolio evidence
-          </div>
-
-          <div className="mt-3 grid gap-3">
-            {aiMatchContext.matched_portfolio_evidence
-              .slice(0, 3)
-              .map((item) => (
-                <div
-                  key={`${item.portfolio_item_id}-${item.title}`}
-                  className="rounded-2xl bg-white p-3 ring-1 ring-emerald-100"
-                >
-                  <p className="text-sm font-extrabold text-[#061a3a]">
-                    {item.title || "Portfolio item"}
-                  </p>
-                  <p className="mt-1 text-sm font-medium leading-6 text-slate-600">
-                    {item.fit_reason || item.evidence}
-                  </p>
-                </div>
-              ))}
-          </div>
-        </div>
+      {matchedPortfolioItems.length > 0 ? (
+        <MatchedPortfolioPanel items={matchedPortfolioItems} />
+      ) : aiMatchContext?.matched_portfolio_evidence.length ? (
+        <MatchedPortfolioTextPanel
+          items={aiMatchContext.matched_portfolio_evidence}
+        />
       ) : null}
 
       {aiMatchContext?.risk_flags.length ? (
-        <div className="mt-5 rounded-[1.1rem] border border-amber-100 bg-amber-50 p-4">
-          <div className="text-xs font-black uppercase tracking-[0.18em] text-amber-700">
-            Rủi ro cần lưu ý
-          </div>
-
-          <ul className="mt-3 grid gap-2">
-            {aiMatchContext.risk_flags.slice(0, 4).map((risk) => (
-              <li
-                key={risk}
-                className="text-sm font-medium leading-6 text-amber-900"
-              >
-                • {risk}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <RiskPanel risks={aiMatchContext.risk_flags} />
       ) : null}
 
       {jobId ? (
@@ -935,7 +1004,8 @@ function DesignerMatchCard({
 function AIFitBreakdown({ context }: { context: MatchContext }) {
   return (
     <div className="mt-5 rounded-[1.1rem] border border-slate-200 bg-slate-50 p-4">
-      <div className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+        <Gauge className="size-4" />
         AI fit breakdown
       </div>
 
@@ -949,10 +1019,226 @@ function AIFitBreakdown({ context }: { context: MatchContext }) {
 
       {context.not_same_style_but_same_vibe ? (
         <div className="mt-3 rounded-2xl bg-white p-3 text-sm font-semibold leading-6 text-blue-700 ring-1 ring-blue-100">
-          Designer không nhất thiết trùng style trực tiếp, nhưng có cùng vibe
-          thị giác với brief/concept.
+          Designer không nhất thiết trùng style trực tiếp, nhưng có cùng vibe thị
+          giác với brief/concept.
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function DesignerDnaPanel({ dna }: { dna: DesignerStyleDnaRow | null }) {
+  if (!dna) {
+    return (
+      <div className="mt-5 rounded-[1.1rem] border border-amber-100 bg-amber-50 p-4">
+        <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-amber-700">
+          <CircleAlert className="size-4" />
+          Designer Style DNA
+        </div>
+
+        <p className="mt-3 text-sm font-medium leading-7 text-amber-900">
+          Designer này chưa có Style DNA đủ rõ. Bạn vẫn có thể chọn nếu thấy
+          portfolio và thông tin hồ sơ phù hợp.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-5 rounded-[1.1rem] border border-blue-100 bg-blue-50/65 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-blue-600">
+          <Sparkles className="size-4" />
+          Designer Style DNA
+        </div>
+
+        <StatusPill tone="info">
+          {`${Number(dna.confidence_score ?? 0)}/100 confidence`}
+        </StatusPill>
+      </div>
+
+      <div className="mt-3 grid gap-3">
+        <CompactTagRow
+          label="Style"
+          items={(dna.style_tags ?? []).slice(0, 5)}
+        />
+
+        <CompactTagRow
+          label="Mood"
+          items={(dna.common_moods ?? []).slice(0, 5)}
+        />
+
+        <CompactTagRow
+          label="Industry"
+          items={(dna.industry_tags ?? []).slice(0, 4).map(getSafeIndustryLabel)}
+        />
+
+        <CompactTagRow
+          label="Category"
+          items={(dna.category_tags ?? []).slice(0, 4).map(getSafeCategoryLabel)}
+        />
+
+        <CompactTextRow
+          label="Portfolio analyzed"
+          value={`${Number(dna.analyzed_portfolio_count ?? 0)} portfolio`}
+        />
+      </div>
+    </div>
+  );
+}
+
+function CompactTagRow({ label, items }: { label: string; items: string[] }) {
+  const cleanItems = uniqueTags(items).map(formatTagLabel).filter(Boolean);
+
+  if (cleanItems.length === 0) return null;
+
+  return (
+    <div className="grid gap-2">
+      <p className="text-xs font-black uppercase tracking-[0.13em] text-blue-600">
+        {label}
+      </p>
+
+      <div className="flex flex-wrap gap-2">
+        {cleanItems.map((item) => (
+          <TagChip key={item}>{item}</TagChip>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CompactTextRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid gap-1">
+      <p className="text-xs font-black uppercase tracking-[0.13em] text-blue-600">
+        {label}
+      </p>
+
+      <p className="text-sm font-semibold leading-6 text-slate-700">{value}</p>
+    </div>
+  );
+}
+
+function ReasonPanel({ reasons }: { reasons: string[] }) {
+  return (
+    <div className="mt-5 rounded-[1.1rem] border border-blue-100 bg-blue-50/65 p-4">
+      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-blue-600">
+        <Sparkles className="size-4" />
+        Lý do đề xuất
+      </div>
+
+      {reasons.length > 0 ? (
+        <ul className="mt-3 grid gap-2">
+          {reasons.slice(0, 8).map((reason) => (
+            <li
+              key={reason}
+              className="flex gap-2 text-sm font-medium leading-6 text-slate-700"
+            >
+              <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+              <span>{reason}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 text-sm font-medium leading-7 text-slate-500">
+          Match này được tạo trước khi hệ thống lưu lý do đề xuất. Hãy tạo
+          matching lại để cập nhật dữ liệu.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function MatchedPortfolioPanel({ items }: { items: PortfolioEvidenceRow[] }) {
+  return (
+    <div className="mt-5 rounded-[1.1rem] border border-emerald-100 bg-emerald-50/70 p-4">
+      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-emerald-700">
+        <BriefcaseBusiness className="size-4" />
+        Portfolio evidence
+      </div>
+
+      <div className="mt-3 grid gap-3">
+        {items.slice(0, 3).map((item) => (
+          <div
+            key={item.id}
+            className="overflow-hidden rounded-2xl bg-white ring-1 ring-emerald-100"
+          >
+            {item.image_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={item.image_url}
+                alt={item.title}
+                className="aspect-[4/3] w-full object-cover"
+              />
+            ) : null}
+
+            <div className="p-3">
+              <p className="break-words text-sm font-extrabold text-[#061a3a]">
+                {item.title}
+              </p>
+
+              <div className="mt-2 flex flex-wrap gap-2">
+                <TagChip>{getSafeCategoryLabel(item.category)}</TagChip>
+                {item.industry ? (
+                  <TagChip>{getSafeIndustryLabel(item.industry)}</TagChip>
+                ) : null}
+              </div>
+
+              {item.ai_visual_summary ? (
+                <p className="mt-2 line-clamp-4 text-sm font-medium leading-6 text-slate-600">
+                  {item.ai_visual_summary}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MatchedPortfolioTextPanel({ items }: { items: MatchEvidence[] }) {
+  return (
+    <div className="mt-5 rounded-[1.1rem] border border-emerald-100 bg-emerald-50/70 p-4">
+      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-emerald-700">
+        <BriefcaseBusiness className="size-4" />
+        Portfolio evidence
+      </div>
+
+      <div className="mt-3 grid gap-3">
+        {items.slice(0, 3).map((item) => (
+          <div
+            key={`${item.portfolio_item_id}-${item.title}`}
+            className="rounded-2xl bg-white p-3 ring-1 ring-emerald-100"
+          >
+            <p className="break-words text-sm font-extrabold text-[#061a3a]">
+              {item.title || "Portfolio item"}
+            </p>
+
+            <p className="mt-1 text-sm font-medium leading-6 text-slate-600">
+              {item.fit_reason || item.evidence}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RiskPanel({ risks }: { risks: string[] }) {
+  return (
+    <div className="mt-5 rounded-[1.1rem] border border-amber-100 bg-amber-50 p-4">
+      <div className="text-xs font-black uppercase tracking-[0.18em] text-amber-700">
+        Rủi ro cần lưu ý
+      </div>
+
+      <ul className="mt-3 grid gap-2">
+        {risks.slice(0, 4).map((risk) => (
+          <li key={risk} className="text-sm font-medium leading-6 text-amber-900">
+            • {risk}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -1146,6 +1432,14 @@ function ScorePill({
   );
 }
 
+function TagChip({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-flex max-w-full items-center rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-left text-xs font-bold leading-5 text-slate-700">
+      <span className="max-w-full whitespace-normal break-words">{children}</span>
+    </span>
+  );
+}
+
 function EmptyState({
   title,
   description,
@@ -1243,32 +1537,106 @@ function normalizeColorPalette(value: unknown) {
     .filter((item) => item.name);
 }
 
-function asRecord(value: unknown): Record<string, any> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {};
-  }
-
-  return value as Record<string, any>;
+function findDesignerDna(rows: DesignerStyleDnaRow[], designerId: string) {
+  return (
+    rows.find(
+      (row) =>
+        row.designer_id === designerId ||
+        row.designer_profile_id === designerId,
+    ) ?? null
+  );
 }
 
-function stringValue(value: unknown) {
-  if (typeof value === "string") {
-    return value.trim();
+function formatList(items: string[], emptyText: string) {
+  const cleanItems = uniqueTags(items).map(formatTagLabel).filter(Boolean);
+
+  if (cleanItems.length === 0) {
+    return emptyText;
   }
 
-  if (value === null || value === undefined) {
-    return "";
-  }
-
-  return String(value).trim();
+  return cleanItems.slice(0, 4).join(", ");
 }
 
-function clampScore(value: number) {
-  if (!Number.isFinite(value)) {
-    return 0;
+function getAvailabilityLabel(status: string | null) {
+  if (status === "available" || status === "open") return "Đang nhận job";
+  if (status === "limited") return "Nhận job hạn chế";
+  if (status === "busy") return "Đang bận";
+  if (status === "unavailable") return "Tạm nghỉ";
+  return "Chưa rõ";
+}
+
+function getSafeCategoryLabel(category: string) {
+  try {
+    return getCategoryLabel(category as Parameters<typeof getCategoryLabel>[0]);
+  } catch {
+    return formatTagLabel(category);
+  }
+}
+
+function getSafeIndustryLabel(industry: string) {
+  try {
+    return getIndustryLabel(industry as Parameters<typeof getIndustryLabel>[0]);
+  } catch {
+    return formatTagLabel(industry);
+  }
+}
+
+function uniqueTags(items: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const item of items) {
+    const trimmed = stringValue(item);
+    const key = normalizeText(trimmed);
+
+    if (!trimmed || seen.has(key)) continue;
+
+    seen.add(key);
+    result.push(trimmed);
   }
 
-  return Math.min(100, Math.max(0, Math.round(value)));
+  return result;
+}
+
+function formatTagLabel(value: string) {
+  const raw = String(value ?? "").trim();
+
+  if (!raw) return "";
+
+  const normalized = raw
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) return "";
+
+  const hasVietnamese =
+    /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(
+      normalized,
+    );
+
+  if (hasVietnamese) {
+    return toVietnameseSentenceCase(normalized);
+  }
+
+  return normalized
+    .toLowerCase()
+    .split(" ")
+    .map((word) => {
+      if (!word) return word;
+      if (word === "ui") return "UI";
+      if (word === "ux") return "UX";
+      if (word === "ai") return "AI";
+      if (word === "fnb") return "F&B";
+
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(" ");
+}
+
+function toVietnameseSentenceCase(value: string) {
+  const lower = value.toLocaleLowerCase("vi-VN");
+  return lower.charAt(0).toLocaleUpperCase("vi-VN") + lower.slice(1);
 }
 
 function getScoreView(score: number) {
@@ -1299,20 +1667,42 @@ function getScoreView(score: number) {
   };
 }
 
-function getAvailabilityLabel(status: string | null) {
-  if (status === "available" || status === "open") return "Đang nhận job";
-  if (status === "limited") return "Nhận job hạn chế";
-  if (status === "busy") return "Đang bận";
-  if (status === "unavailable") return "Tạm nghỉ";
-  return "Chưa rõ";
+function normalizeText(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
-function getSafeCategoryLabel(category: string) {
-  try {
-    return getCategoryLabel(category as Parameters<typeof getCategoryLabel>[0]);
-  } catch {
-    return category;
+function asRecord(value: unknown): Record<string, any> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
   }
+
+  return value as Record<string, any>;
+}
+
+function stringValue(value: unknown) {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  return String(value).trim();
+}
+
+function clampScore(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.min(100, Math.max(0, Math.round(value)));
 }
 
 function getSearchParamString(value: string | string[] | undefined) {

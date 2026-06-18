@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { rebuildDesignerStyleDNA } from "@/lib/ai/tasks/designer-portfolio-analysis";
 import { getCurrentAuthState } from "@/lib/auth/current-user";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -42,6 +43,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     );
   }
 
+  const designerId = authState.designerProfile.id;
   const adminSupabase = createSupabaseAdminClient() as any;
 
   const { data: portfolioItem, error: findError } = await adminSupabase
@@ -68,7 +70,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     );
   }
 
-  if (portfolioItem.designer_id !== authState.designerProfile.id) {
+  if (portfolioItem.designer_id !== designerId) {
     return NextResponse.json(
       {
         message: "Bạn không có quyền xóa portfolio này.",
@@ -77,11 +79,26 @@ export async function DELETE(_request: Request, context: RouteContext) {
     );
   }
 
+  const { error: deleteAnalysisError } = await adminSupabase
+    .from("portfolio_ai_analysis")
+    .delete()
+    .eq("portfolio_item_id", portfolioId)
+    .eq("designer_id", designerId);
+
+  if (deleteAnalysisError) {
+    return NextResponse.json(
+      {
+        message: deleteAnalysisError.message,
+      },
+      { status: 500 },
+    );
+  }
+
   const { error: deleteError } = await adminSupabase
     .from("portfolio_items")
     .delete()
     .eq("id", portfolioId)
-    .eq("designer_id", authState.designerProfile.id);
+    .eq("designer_id", designerId);
 
   if (deleteError) {
     return NextResponse.json(
@@ -98,8 +115,24 @@ export async function DELETE(_request: Request, context: RouteContext) {
     await adminSupabase.storage.from(PORTFOLIO_BUCKET).remove([storagePath]);
   }
 
+  try {
+    await rebuildDesignerStyleDNA({
+      designerId,
+      lastPortfolioItemId: null,
+    });
+  } catch (error) {
+    console.error("[DesignMatch AI] Rebuild Style DNA after delete failed:", error);
+
+    return NextResponse.json({
+      message:
+        "Đã xóa portfolio, nhưng Style DNA chưa được cập nhật lại. Hãy tải lại trang hoặc phân tích lại portfolio còn lại.",
+      dnaUpdated: false,
+    });
+  }
+
   return NextResponse.json({
-    message: "Đã xóa portfolio thành công.",
+    message: "Đã xóa portfolio và cập nhật lại Style DNA.",
+    dnaUpdated: true,
   });
 }
 

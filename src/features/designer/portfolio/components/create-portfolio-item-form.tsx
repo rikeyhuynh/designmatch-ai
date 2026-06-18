@@ -1,8 +1,8 @@
 "use client";
 
-import { ImageIcon, Loader2, Plus, Sparkles } from "lucide-react";
+import { ImageIcon, Loader2, Plus, Sparkles, UploadCloud, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { ChangeEvent, FormEvent, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,34 @@ const categoryOptions = [
     value: "brand_identity",
     label: "Brand Identity",
   },
+  {
+    value: "logo",
+    label: "Logo",
+  },
+  {
+    value: "social_post",
+    label: "Social Media Post",
+  },
+  {
+    value: "banner",
+    label: "Banner",
+  },
+  {
+    value: "campaign_visual",
+    label: "Campaign Visual",
+  },
+  {
+    value: "menu",
+    label: "Menu / Catalogue",
+  },
+  {
+    value: "packaging",
+    label: "Packaging",
+  },
+  {
+    value: "ui_design",
+    label: "UI Design",
+  },
 ];
 
 const industryOptions = [
@@ -33,6 +61,34 @@ const industryOptions = [
   {
     value: "retail",
     label: "Bán lẻ",
+  },
+  {
+    value: "education",
+    label: "Giáo dục",
+  },
+  {
+    value: "fashion",
+    label: "Thời trang",
+  },
+  {
+    value: "technology",
+    label: "Công nghệ",
+  },
+  {
+    value: "healthcare",
+    label: "Sức khỏe",
+  },
+  {
+    value: "real_estate",
+    label: "Bất động sản",
+  },
+  {
+    value: "event",
+    label: "Sự kiện",
+  },
+  {
+    value: "local_business",
+    label: "Doanh nghiệp địa phương",
   },
 ];
 
@@ -56,6 +112,7 @@ export function CreatePortfolioItemForm() {
   const [category, setCategory] = useState(categoryOptions[0].value);
   const [industry, setIndustry] = useState(industryOptions[0].value);
   const [image, setImage] = useState<File | null>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStep, setSubmitStep] = useState("");
 
@@ -64,6 +121,14 @@ export function CreatePortfolioItemForm() {
 
     return URL.createObjectURL(image);
   }, [image]);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
 
   function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
     const selectedFile = event.target.files?.[0];
@@ -77,6 +142,7 @@ export function CreatePortfolioItemForm() {
       toast.error("Ảnh không hợp lệ", {
         description: "Chỉ hỗ trợ PNG, JPG hoặc WEBP.",
       });
+
       event.target.value = "";
       setImage(null);
       return;
@@ -86,12 +152,18 @@ export function CreatePortfolioItemForm() {
       toast.error("Ảnh quá nặng", {
         description: "Dung lượng tối đa là 5MB.",
       });
+
       event.target.value = "";
       setImage(null);
       return;
     }
 
     setImage(selectedFile);
+  }
+
+  function clearImage() {
+    setImage(null);
+    setFileInputKey((current) => current + 1);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -106,7 +178,7 @@ export function CreatePortfolioItemForm() {
 
     if (!category) {
       toast.error("Thiếu category", {
-        description: "Vui lòng chọn category cho portfolio.",
+        description: "Vui lòng chọn loại thiết kế cho portfolio.",
       });
       return;
     }
@@ -145,26 +217,26 @@ export function CreatePortfolioItemForm() {
 
       if (!response.ok) {
         toast.error("Không thể thêm portfolio", {
-          description: result.message ?? "Unknown error",
+          description: result.message ?? "Đã có lỗi xảy ra.",
         });
         return;
       }
 
       if (result.aiAnalysisStatus === "completed") {
-        toast.success("Đã thêm portfolio và cập nhật Designer Style DNA", {
+        toast.success("Đã thêm portfolio và cập nhật Style DNA", {
           description: result.message,
         });
       } else if (result.aiAnalysisStatus === "failed") {
         toast.warning("Đã thêm portfolio nhưng AI chưa phân tích được", {
           description:
             result.message ??
-            "Bạn có thể phân tích lại portfolio này sau khi kiểm tra ảnh.",
+            "Bạn có thể kiểm tra ảnh và phân tích lại portfolio sau.",
         });
       } else {
         toast.success("Đã thêm portfolio", {
           description:
             result.message ??
-            "Portfolio chưa có ảnh nên AI DNA chưa được cập nhật.",
+            "Portfolio chưa có ảnh nên chưa được dùng để cập nhật Style DNA.",
         });
       }
 
@@ -173,6 +245,7 @@ export function CreatePortfolioItemForm() {
       setCategory(categoryOptions[0].value);
       setIndustry(industryOptions[0].value);
       setImage(null);
+      setFileInputKey((current) => current + 1);
 
       router.refresh();
     } finally {
@@ -201,8 +274,8 @@ export function CreatePortfolioItemForm() {
           </h3>
 
           <p className="mt-2 text-sm font-medium leading-7 text-slate-600">
-            Portfolio này sẽ được AI phân tích phong cách và cộng dồn vào
-            Designer Style DNA. DNA không bị ghi đè bởi một portfolio mới.
+            Mỗi portfolio sẽ có dữ liệu Style DNA riêng. Khi portfolio có ảnh,
+            AI sẽ phân tích phong cách và cập nhật lại Style DNA tổng hợp.
           </p>
         </div>
       </div>
@@ -215,9 +288,8 @@ export function CreatePortfolioItemForm() {
           </div>
 
           <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
-            Sau khi upload ảnh portfolio, AI sẽ trích xuất style tags, mood,
-            màu sắc, typography, layout và điểm mạnh visual. Các tín hiệu này
-            được cộng dồn vào DNA tổng hợp của designer.
+            Sau khi upload ảnh, AI sẽ trích xuất style tags, mood, màu sắc,
+            typography, layout và điểm mạnh thị giác của portfolio này.
           </p>
         </div>
 
@@ -258,7 +330,7 @@ export function CreatePortfolioItemForm() {
 
         <div className="grid gap-2">
           <Label htmlFor="portfolio-category" className="font-extrabold">
-            Category
+            Loại thiết kế
           </Label>
 
           <select
@@ -297,6 +369,7 @@ export function CreatePortfolioItemForm() {
           </Label>
 
           <Input
+            key={fileInputKey}
             id="portfolio-image"
             type="file"
             accept="image/png,image/jpeg,image/webp"
@@ -306,14 +379,15 @@ export function CreatePortfolioItemForm() {
           />
 
           <p className="text-xs font-medium leading-5 text-slate-500">
-            Hỗ trợ PNG, JPG, WEBP. Dung lượng tối đa 5MB. Nên upload ảnh rõ ràng
-            để AI phân tích Style DNA chính xác hơn.
+            Hỗ trợ PNG, JPG, WEBP. Dung lượng tối đa 5MB. Nên upload ảnh rõ để
+            AI phân tích chính xác hơn.
           </p>
         </div>
 
         <div className="overflow-hidden rounded-[1.15rem] border border-blue-100 bg-white">
           <div className="grid aspect-[4/3] place-items-center bg-blue-50">
             {previewUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={previewUrl}
                 alt="Portfolio preview"
@@ -321,13 +395,39 @@ export function CreatePortfolioItemForm() {
               />
             ) : (
               <div className="grid place-items-center text-center">
-                <ImageIcon className="size-10 text-blue-700" />
+                <UploadCloud className="size-10 text-blue-700" />
                 <p className="mt-3 text-sm font-bold text-blue-700">
                   Chưa chọn ảnh preview
                 </p>
               </div>
             )}
           </div>
+
+          {image ? (
+            <div className="flex items-center justify-between gap-3 border-t border-blue-100 p-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-extrabold text-[#061a3a]">
+                  {image.name}
+                </p>
+
+                <p className="text-xs font-medium text-slate-500">
+                  {formatFileSize(image.size)}
+                </p>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={clearImage}
+                disabled={isSubmitting}
+                className="shrink-0 rounded-full border-red-200 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700"
+                aria-label="Xóa ảnh đã chọn"
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+          ) : null}
         </div>
 
         <Button
@@ -343,11 +443,23 @@ export function CreatePortfolioItemForm() {
           ) : (
             <>
               <Plus className="mr-2 size-4" />
-              Thêm portfolio + cập nhật DNA
+              Thêm portfolio
             </>
           )}
         </Button>
       </div>
     </form>
   );
+}
+
+function formatFileSize(size: number) {
+  if (size < 1024) {
+    return `${size} B`;
+  }
+
+  if (size < 1024 * 1024) {
+    return `${Math.round(size / 1024)} KB`;
+  }
+
+  return `${Math.round((size / 1024 / 1024) * 10) / 10} MB`;
 }

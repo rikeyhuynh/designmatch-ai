@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import {
   ArrowLeft,
@@ -31,6 +31,7 @@ import { SurfaceCard } from "@/components/common/surface-card";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { Button } from "@/components/ui/button";
 import { CreateJobUpdateForm } from "@/features/designer/jobs/components/create-job-update-form";
+import { JobChatBox } from "@/features/jobs/chat/components/job-chat-box";
 import { requireRole } from "@/lib/auth/guards";
 import {
   getCategoryLabel,
@@ -751,6 +752,11 @@ export default async function DesignerJobDetailPage({
         </SurfaceCard>
       </section>
 
+
+      <section className="mt-6">
+        <JobChatBox jobId={job.id} role="designer" />
+      </section>
+
       <section className="mt-6">
         <JobCreativeDirectionPanel
           concept={selectedConcept}
@@ -1189,9 +1195,9 @@ function DesignerBriefPanel({
 
                   {section.requirements.length > 0 ? (
                     <ul className="mt-3 grid gap-2">
-                      {section.requirements.map((item) => (
+                      {section.requirements.map((item, index) => (
                         <li
-                          key={item}
+                          key={`${String(item)}-${index}`}
                           className="flex gap-2 text-sm font-medium leading-6 text-slate-700"
                         >
                           <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
@@ -1408,9 +1414,9 @@ function BriefListPanel({
 
       {realItems.length > 0 ? (
         <ul className="mt-3 grid gap-2">
-          {realItems.map((item) => (
+          {realItems.map((item, index) => (
             <li
-              key={item}
+              key={`${String(item)}-${index}`}
               className="flex gap-2 text-sm font-medium leading-6 text-slate-700"
             >
               <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
@@ -1956,3 +1962,4 @@ function getSafeStyleLabel(style: string) {
     return style;
   }
 }
+

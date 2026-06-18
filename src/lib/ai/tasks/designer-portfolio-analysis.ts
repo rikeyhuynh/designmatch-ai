@@ -49,6 +49,17 @@ type PortfolioAnalysisRow = {
   confidence_score: number | null;
 };
 
+type LivePortfolioRow = {
+  id: string;
+  designer_id: string;
+  ai_analysis_status: string | null;
+  ai_style_tags: string[] | null;
+  ai_industry_tags: string[] | null;
+  ai_category_tags: string[] | null;
+  ai_visual_summary: string | null;
+  ai_confidence_score: number | null;
+};
+
 type AggregatedDNA = {
   analyzed_portfolio_count: number;
   style_tags: string[];
@@ -107,11 +118,16 @@ export async function analyzeDesignerPortfolio(
       .eq("id", input.portfolioItemId)
       .eq("designer_id", input.designerId);
 
+    const dna = await rebuildDesignerStyleDNA({
+      designerId: input.designerId,
+      lastPortfolioItemId: input.portfolioItemId,
+    });
+
     return {
       status: "skipped",
       message: "Portfolio chưa có ảnh để AI phân tích.",
       analysis: null,
-      dna: null,
+      dna,
     };
   }
 
@@ -165,7 +181,7 @@ export async function analyzeDesignerPortfolio(
     const { error: portfolioUpdateError } = await supabase
       .from("portfolio_items")
       .update({
-        ai_analysis_status: "success",
+        ai_analysis_status: "completed",
         ai_analyzed_at: now,
         ai_style_tags: analysis.style_tags,
         ai_industry_tags: analysis.industry_tags,
@@ -186,7 +202,7 @@ export async function analyzeDesignerPortfolio(
     });
 
     return {
-      status: "success",
+      status: "completed",
       message: "Đã phân tích portfolio và cập nhật Designer Style DNA.",
       provider: aiResult.provider,
       model: aiResult.model,
@@ -205,6 +221,133 @@ export async function analyzeDesignerPortfolio(
 
     throw error;
   }
+}
+
+export async function rebuildDesignerStyleDNA({
+  designerId,
+  lastPortfolioItemId,
+}: {
+  designerId: string;
+  lastPortfolioItemId?: string | null;
+}) {
+  const supabase = createSupabaseAdminClient() as any;
+
+  const { data: livePortfolioData, error: livePortfolioError } = await supabase
+    .from("portfolio_items")
+    .select(
+      `
+      id,
+      designer_id,
+      ai_analysis_status,
+      ai_style_tags,
+      ai_industry_tags,
+      ai_category_tags,
+      ai_visual_summary,
+      ai_confidence_score
+    `,
+    )
+    .eq("designer_id", designerId)
+    .in("ai_analysis_status", ["completed", "success"])
+    .order("created_at", { ascending: true });
+
+  if (livePortfolioError) {
+    throw new Error(livePortfolioError.message);
+  }
+
+  const livePortfolioItems = (livePortfolioData ?? []) as LivePortfolioRow[];
+  const livePortfolioIds = livePortfolioItems.map((item) => item.id);
+
+  if (livePortfolioIds.length === 0) {
+    const { error: deleteDnaError } = await supabase
+      .from("designer_style_dna")
+      .delete()
+      .or(`designer_id.eq.${designerId},designer_profile_id.eq.${designerId}`);
+
+    if (deleteDnaError) {
+      throw new Error(deleteDnaError.message);
+    }
+
+    return null;
+  }
+
+  const { data: analysisData, error: analysisError } = await supabase
+    .from("portfolio_ai_analysis")
+    .select(
+      `
+      portfolio_item_id,
+      designer_id,
+      style_tags,
+      mood_tags,
+      industry_tags,
+      category_tags,
+      color_tags,
+      typography_tags,
+      layout_tags,
+      visual_strengths,
+      confidence_score
+    `,
+    )
+    .eq("designer_id", designerId)
+    .in("portfolio_item_id", livePortfolioIds)
+    .order("created_at", { ascending: true });
+
+  if (analysisError) {
+    throw new Error(analysisError.message);
+  }
+
+  const analysisRows = (analysisData ?? []) as PortfolioAnalysisRow[];
+
+  const rows =
+    analysisRows.length > 0
+      ? analysisRows
+      : livePortfolioItems.map((item) => ({
+          portfolio_item_id: item.id,
+          designer_id: item.designer_id,
+          style_tags: item.ai_style_tags ?? [],
+          mood_tags: [],
+          industry_tags: item.ai_industry_tags ?? [],
+          category_tags: item.ai_category_tags ?? [],
+          color_tags: [],
+          typography_tags: [],
+          layout_tags: [],
+          visual_strengths: [],
+          confidence_score: item.ai_confidence_score ?? 0,
+        }));
+
+  const dna = aggregateDesignerDNA(rows);
+  const now = new Date().toISOString();
+
+  const { error: dnaError } = await supabase
+    .from("designer_style_dna")
+    .upsert(
+      {
+        designer_id: designerId,
+        designer_profile_id: designerId,
+        analyzed_portfolio_count: dna.analyzed_portfolio_count,
+        style_tags: dna.style_tags,
+        industry_tags: dna.industry_tags,
+        category_tags: dna.category_tags,
+        visual_strengths: dna.visual_strengths,
+        common_moods: dna.common_moods,
+        color_preferences: dna.color_preferences,
+        typography_preferences: dna.typography_preferences,
+        layout_preferences: dna.layout_preferences,
+        dna_summary: dna.dna_summary,
+        confidence_score: dna.confidence_score,
+        last_portfolio_item_id: lastPortfolioItemId ?? livePortfolioIds.at(-1) ?? null,
+        last_analyzed_at: now,
+        updated_at: now,
+      },
+      {
+        onConflict: "designer_id",
+      },
+    );
+
+  if (dnaError) {
+    throw new Error(dnaError.message);
+  }
+
+  return dna;
 }
 
 async function runGeminiPortfolioAnalysis(
@@ -427,6 +570,72 @@ async function runGeminiPortfolioAnalysis(
   }
 }
 
+function aggregateDesignerDNA(rows: PortfolioAnalysisRow[]): AggregatedDNA {
+  const analyzedCount = rows.length;
+
+  const styleTags = topValues(rows.flatMap((row) => row.style_tags ?? []), 16);
+  const industryTags = topValues(
+    rows.flatMap((row) => row.industry_tags ?? []),
+    12,
+  );
+  const categoryTags = topValues(
+    rows.flatMap((row) => row.category_tags ?? []),
+    12,
+  );
+  const visualStrengths = topValues(
+    rows.flatMap((row) => row.visual_strengths ?? []),
+    16,
+  );
+  const commonMoods = topValues(rows.flatMap((row) => row.mood_tags ?? []), 12);
+  const colorPreferences = topValues(
+    rows.flatMap((row) => row.color_tags ?? []),
+    12,
+  );
+  const typographyPreferences = topValues(
+    rows.flatMap((row) => row.typography_tags ?? []),
+    12,
+  );
+  const layoutPreferences = topValues(
+    rows.flatMap((row) => row.layout_tags ?? []),
+    12,
+  );
+
+  const confidenceValues = rows
+    .map((row) => Number(row.confidence_score ?? 0))
+    .filter((score) => Number.isFinite(score) && score > 0);
+
+  const confidenceScore =
+    confidenceValues.length > 0
+      ? Math.round(
+          confidenceValues.reduce((sum, score) => sum + score, 0) /
+            confidenceValues.length,
+        )
+      : 0;
+
+  const dnaSummary = buildDnaSummary({
+    analyzedCount,
+    styleTags,
+    industryTags,
+    categoryTags,
+    visualStrengths,
+    commonMoods,
+  });
+
+  return {
+    analyzed_portfolio_count: analyzedCount,
+    style_tags: styleTags,
+    industry_tags: industryTags,
+    category_tags: categoryTags,
+    visual_strengths: visualStrengths,
+    common_moods: commonMoods,
+    color_preferences: colorPreferences,
+    typography_preferences: typographyPreferences,
+    layout_preferences: layoutPreferences,
+    dna_summary: dnaSummary,
+    confidence_score: confidenceScore,
+  };
+}
+
 function getGeminiApiKey() {
   const apiKey =
     process.env.GEMINI_API_KEY ??
@@ -640,143 +849,6 @@ function buildPortfolioAnalysisInputForLog(input: AnalyzeDesignerPortfolioInput)
     category: input.category,
     industry: input.industry,
     imageUrl: input.imageUrl,
-  };
-}
-
-async function rebuildDesignerStyleDNA({
-  designerId,
-  lastPortfolioItemId,
-}: {
-  designerId: string;
-  lastPortfolioItemId: string;
-}) {
-  const supabase = createSupabaseAdminClient() as any;
-
-  const { data, error } = await supabase
-    .from("portfolio_ai_analysis")
-    .select(
-      `
-      portfolio_item_id,
-      designer_id,
-      style_tags,
-      mood_tags,
-      industry_tags,
-      category_tags,
-      color_tags,
-      typography_tags,
-      layout_tags,
-      visual_strengths,
-      confidence_score
-    `,
-    )
-    .eq("designer_id", designerId)
-    .order("created_at", { ascending: true });
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const rows = (data ?? []) as PortfolioAnalysisRow[];
-
-  const dna = aggregateDesignerDNA(rows);
-  const now = new Date().toISOString();
-
-  const { error: dnaError } = await supabase
-    .from("designer_style_dna")
-    .upsert(
-      {
-        designer_id: designerId,
-        designer_profile_id: designerId,
-        analyzed_portfolio_count: dna.analyzed_portfolio_count,
-        style_tags: dna.style_tags,
-        industry_tags: dna.industry_tags,
-        category_tags: dna.category_tags,
-        visual_strengths: dna.visual_strengths,
-        common_moods: dna.common_moods,
-        color_preferences: dna.color_preferences,
-        typography_preferences: dna.typography_preferences,
-        layout_preferences: dna.layout_preferences,
-        dna_summary: dna.dna_summary,
-        confidence_score: dna.confidence_score,
-        last_portfolio_item_id: lastPortfolioItemId,
-        last_analyzed_at: now,
-        updated_at: now,
-      },
-      {
-        onConflict: "designer_id",
-      },
-    );
-
-  if (dnaError) {
-    throw new Error(dnaError.message);
-  }
-
-  return dna;
-}
-
-function aggregateDesignerDNA(rows: PortfolioAnalysisRow[]): AggregatedDNA {
-  const analyzedCount = rows.length;
-
-  const styleTags = topValues(rows.flatMap((row) => row.style_tags ?? []), 16);
-  const industryTags = topValues(
-    rows.flatMap((row) => row.industry_tags ?? []),
-    12,
-  );
-  const categoryTags = topValues(
-    rows.flatMap((row) => row.category_tags ?? []),
-    12,
-  );
-  const visualStrengths = topValues(
-    rows.flatMap((row) => row.visual_strengths ?? []),
-    16,
-  );
-  const commonMoods = topValues(rows.flatMap((row) => row.mood_tags ?? []), 12);
-  const colorPreferences = topValues(
-    rows.flatMap((row) => row.color_tags ?? []),
-    12,
-  );
-  const typographyPreferences = topValues(
-    rows.flatMap((row) => row.typography_tags ?? []),
-    12,
-  );
-  const layoutPreferences = topValues(
-    rows.flatMap((row) => row.layout_tags ?? []),
-    12,
-  );
-
-  const confidenceValues = rows
-    .map((row) => Number(row.confidence_score ?? 0))
-    .filter((score) => Number.isFinite(score) && score > 0);
-
-  const confidenceScore =
-    confidenceValues.length > 0
-      ? Math.round(
-          confidenceValues.reduce((sum, score) => sum + score, 0) /
-            confidenceValues.length,
-        )
-      : 0;
-
-  const dnaSummary = buildDnaSummary({
-    analyzedCount,
-    styleTags,
-    industryTags,
-    categoryTags,
-    visualStrengths,
-    commonMoods,
-  });
-
-  return {
-    analyzed_portfolio_count: analyzedCount,
-    style_tags: styleTags,
-    industry_tags: industryTags,
-    category_tags: categoryTags,
-    visual_strengths: visualStrengths,
-    common_moods: commonMoods,
-    color_preferences: colorPreferences,
-    typography_preferences: typographyPreferences,
-    layout_preferences: layoutPreferences,
-    dna_summary: dnaSummary,
-    confidence_score: confidenceScore,
   };
 }
 
